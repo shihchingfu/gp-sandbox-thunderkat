@@ -20,8 +20,16 @@ HalfNormal" shape=ellipse]
 MvNormal" shape=ellipse style=filled]
 		label=21 labeljust=r labelloc=b style=rounded
 	}
+	subgraph cluster200 {
+		f_star [label="f_star
+~
+MvNormal" shape=ellipse]
+		label=200 labeljust=r labelloc=b style=rounded
+	}
 	log_2ell_SE_sq -> ell_SE
 	log_eta_SE -> eta_SE
 	eta_SE -> y
 	ell_SE -> y
+	eta_SE -> f_star
+	ell_SE -> f_star
 }
