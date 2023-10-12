@@ -1,29 +1,22 @@
 """Module containing utility functions for fitting and plotting results of GP fitting"""
 import math
-from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import pymc as pm
 from pymc.gp.util import plot_gp_dist
 import arviz as az
-import graphviz as gv
 import xarray as xr
-import scipy as sp
-import scipy.stats as st
-from scipy.fftpack import fft, ifft, fftfreq, fftshift
 from scipy import signal
-from astropy.timeseries import LombScargle
 
 N_DRAWS = 1000
 N_TUNE = 1000
-N_PPC = 200 # No. prior predictive samples
-N_NEW = 200 # No. posterior predictive samples
-
+N_PPC = 300 # No. prior predictive samples
+N_NEW = 300 # No. posterior predictive samples
 
 def plot_lc(path_to_csv):
     """Plot light curve from raw CSV data including 1 sigma error bars and overall mean."""
-    
+
     this_lc = pd.read_csv(path_to_csv)
     this_x = this_lc['mjd']
     this_y = this_lc['f_peak']
@@ -126,13 +119,7 @@ def fit_se_gp(path_to_csv, rng_seed=None):
     y_stderr = lc["f_peak_err"].to_numpy()
     t = lc["mjd"].to_numpy()
 
-    N = t.shape[0]
-    y_min, y_max, y_range = np.nanmin(y), np.nanmax(y), np.ptp(y)
-    y_mean, y_sd = np.nanmean(y), np.nanstd(y)
-    y_stderr_mean, y_stderr_sd = np.nanmean(y_stderr), np.nanstd(y_stderr)
-    t_min, t_max, t_range = np.nanmin(t), np.nanmax(t), np.ptp(t)
-    t_mingap, t_maxgap = np.diff(t).min(), np.diff(t).max()
-
+    t_min, t_range = np.nanmin(t), np.ptp(t)
     t = t - t_min # translate minimum to origin
 
     with pm.Model() as model:
@@ -143,31 +130,31 @@ def fit_se_gp(path_to_csv, rng_seed=None):
         eta_SE = pm.Deterministic("eta_SE", pm.math.exp(log_eta_SE))
 
         cov_func = eta_SE**2 * pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE)
-        
-        gp = pm.gp.Marginal(cov_func=cov_func) # zero mean function 
 
-        sig = pm.HalfNormal("sig", sigma=y_stderr) 
+        gp = pm.gp.Marginal(cov_func=cov_func) # zero mean function
+
+        sig = pm.HalfNormal("sig", sigma=y_stderr)
         cov_noise = pm.gp.cov.WhiteNoise(sigma=y_stderr)
 
         y_ = gp.marginal_likelihood(
             "y", 
-            X=t.reshape(-1,1), 
-            y=y.reshape(-1,1).flatten(), 
+            X=t.reshape(-1,1),
+            y=y.reshape(-1,1).flatten(),
             sigma=cov_noise
-        ) 
-        
+        )
+
         se_trace = pm.sample_prior_predictive(samples=N_PPC, random_seed=rng_seed)
 
         se_trace.extend(
             pm.sample(
-                draws=N_DRAWS, 
-                tune=N_TUNE, 
+                draws=N_DRAWS,
+                tune=N_TUNE,
                 chains=4,
-                cores=4, 
+                cores=4,
                 random_seed=rng_seed
             )
-        )       
-    
+        )
+
         t_new = np.linspace(
             start=np.floor(t.min()),
             stop=np.ceil(t.max()),
@@ -195,9 +182,7 @@ def fit_m32_gp(path_to_csv, rng_seed=None):
     y_stderr = lc["f_peak_err"].to_numpy()
     t = lc["mjd"].to_numpy()
 
-    N = t.shape[0]
     t_min, t_range = np.nanmin(t), np.ptp(t)
-    
     t = t - t_min # translate minimum to origin
 
     with pm.Model() as model:
@@ -209,30 +194,30 @@ def fit_m32_gp(path_to_csv, rng_seed=None):
 
         cov_func = eta_M32**2 * pm.gp.cov.Matern32(input_dim=1, ls=ell_M32)
         
-        gp = pm.gp.Marginal(cov_func=cov_func) # zero mean function 
+        gp = pm.gp.Marginal(cov_func=cov_func) # zero mean function
 
-        sig = pm.HalfNormal("sig", sigma=y_stderr) 
+        sig = pm.HalfNormal("sig", sigma=y_stderr)
         cov_noise = pm.gp.cov.WhiteNoise(sigma=y_stderr)
 
         y_ = gp.marginal_likelihood(
             "y", 
-            X=t.reshape(-1,1), 
-            y=y.reshape(-1,1).flatten(), 
+            X=t.reshape(-1,1),
+            y=y.reshape(-1,1).flatten(),
             sigma=cov_noise
-        ) 
-        
+        )
+
         m32_trace = pm.sample_prior_predictive(samples=N_PPC, random_seed=rng_seed)
 
         m32_trace.extend(
             pm.sample(
-                draws=N_DRAWS, 
-                tune=N_TUNE, 
+                draws=N_DRAWS,
+                tune=N_TUNE,
                 chains=4,
-                cores=4, 
+                cores=4,
                 random_seed=rng_seed
             )
-        )       
-    
+        )
+
         t_new = np.linspace(
             start=np.floor(t.min()),
             stop=np.ceil(t.max()),
@@ -260,9 +245,7 @@ def fit_sem32_gp(path_to_csv, multiplicative_kernel=False, rng_seed=None):
     y_stderr = lc["f_peak_err"].to_numpy()
     t = lc["mjd"].to_numpy()
 
-    N = t.shape[0]
     t_min, t_range = np.nanmin(t), np.ptp(t)
-    
     t = t - t_min # translate minimum to origin
 
     with pm.Model() as model:
@@ -290,30 +273,30 @@ def fit_sem32_gp(path_to_csv, multiplicative_kernel=False, rng_seed=None):
             cov_func = eta**2 * pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE) * \
                 pm.gp.cov.Matern32(input_dim=1, ls=ell_M)
 
-        gp = pm.gp.Marginal(cov_func=cov_func) # zero mean function 
+        gp = pm.gp.Marginal(cov_func=cov_func) # zero mean function
 
-        sig = pm.HalfNormal("sig", sigma=y_stderr) 
+        sig = pm.HalfNormal("sig", sigma=y_stderr)
         cov_noise = pm.gp.cov.WhiteNoise(sigma=y_stderr)
 
         y_ = gp.marginal_likelihood(
-            "y", 
-            X=t.reshape(-1,1), 
-            y=y.reshape(-1,1).flatten(), 
+            "y",
+            X=t.reshape(-1,1),
+            y=y.reshape(-1,1).flatten(),
             sigma=cov_noise
-        ) 
-        
+        )
+
         sem32_trace = pm.sample_prior_predictive(samples=N_PPC, random_seed=rng_seed)
 
         sem32_trace.extend(
             pm.sample(
-                draws=N_DRAWS, 
-                tune=N_TUNE, 
+                draws=N_DRAWS,
+                tune=N_TUNE,
                 chains=4,
-                cores=4, 
+                cores=4,
                 random_seed=rng_seed
             )
-        )       
-    
+        )
+
         t_new = np.linspace(
             start=np.floor(t.min()),
             stop=np.ceil(t.max()),
@@ -341,9 +324,7 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
     y_stderr = lc["f_peak_err"].to_numpy()
     t = lc["mjd"].to_numpy()
 
-    N = t.shape[0]
     t_min, t_range = np.nanmin(t), np.ptp(t)
-    
     t = t - t_min # translate minimum to origin
 
     with pm.Model() as model:
@@ -365,28 +346,28 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
 
         gp = gp_SE + gp_M32
 
-        sig = pm.HalfNormal("sig", sigma=y_stderr) 
+        sig = pm.HalfNormal("sig", sigma=y_stderr)
         cov_noise = pm.gp.cov.WhiteNoise(sigma=y_stderr)
 
         y_ = gp.marginal_likelihood(
-            "y", 
-            X=t.reshape(-1,1), 
-            y=y.reshape(-1,1).flatten(), 
+            "y",
+            X=t.reshape(-1,1),
+            y=y.reshape(-1,1).flatten(),
             sigma=cov_noise
-        ) 
+        )
 
         gpSE_gpM32_trace = pm.sample_prior_predictive(samples=N_PPC, random_seed=rng_seed)
 
         gpSE_gpM32_trace.extend(
             pm.sample(
-                draws=N_DRAWS, 
-                tune=N_TUNE, 
+                draws=N_DRAWS,
+                tune=N_TUNE,
                 chains=4,
-                cores=4, 
+                cores=4,
                 random_seed=rng_seed
             )
-        )       
-    
+        )
+
         t_new = np.linspace(
             start=np.floor(t.min()),
             stop=np.ceil(t.max()),
@@ -405,3 +386,45 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
         gpSE_gpM32_dag = pm.model_to_graphviz(model)
 
     return gpSE_gpM32_trace, gpSE_gpM32_dag
+
+def plot_welch_psd(trace):
+    """Function for plotting the Welch approximated power spectral density (PSD) of GP fitted posterior predictive samples."""
+
+    WELCH_NFFT=512
+    WELCH_DETREND=False
+    WELCH_SCALING="density"
+    WELCH_AVERAGE="median"
+
+    postpred_DataArray = az.extract(trace, "posterior_predictive", var_names=["f_star"])
+
+    freqs_nd, welch_psds_nd  = signal.welch(
+        x=postpred_DataArray, axis=0,
+        fs=1,
+        nfft=WELCH_NFFT, detrend=WELCH_DETREND, scaling=WELCH_SCALING, average=WELCH_AVERAGE
+    )
+
+    welch_psds_dataset = xr.Dataset(
+        data_vars=dict(
+            power=(["freq", "sample"], welch_psds_nd)
+        ),
+        coords=dict(
+            freq=freqs_nd,
+            sample=range(1,postpred_DataArray.shape[1] + 1)
+        )
+    )
+
+    psd_median = welch_psds_dataset.median(dim="sample").to_array().to_numpy().flatten()
+    psd_q975 = welch_psds_dataset.quantile(q=0.975, dim="sample").to_array().to_numpy().flatten()
+    psd_q84 = welch_psds_dataset.quantile(q=0.84, dim="sample").to_array().to_numpy().flatten()
+    psd_q16 = welch_psds_dataset.quantile(q=0.16, dim="sample").to_array().to_numpy().flatten()
+    psd_q025 = welch_psds_dataset.quantile(q=0.025, dim="sample").to_array().to_numpy().flatten()
+
+    fig = plt.figure(figsize=(12, 5))
+    ax = fig.add_subplot(1,1,1)
+    ax.fill_between(freqs_nd, psd_q16, psd_q84, alpha=0.7, color="blue", label=r"68% HDI")
+    ax.fill_between(freqs_nd, psd_q025, psd_q975, alpha=0.5, color="blue", label=r"95% HDI")
+    ax.loglog(freqs_nd, psd_median, lw=2,color="red", alpha=0.8, label=r"Median")
+    ax.set_xlabel("Frequency of modulation (Hz)")
+    ax.set_ylabel(r"PSD (Jy$^2$ Hz)")
+    ax.set_title("Welch PSD of post. pred. samples")
+    ax.legend()
