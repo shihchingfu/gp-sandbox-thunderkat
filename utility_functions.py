@@ -8,11 +8,18 @@ import pymc as pm
 from pymc.gp.util import plot_gp_dist
 import arviz as az
 import graphviz as gv
+import xarray as xr
+import scipy as sp
+import scipy.stats as st
+from scipy.fftpack import fft, ifft, fftfreq, fftshift
+from scipy import signal
+from astropy.timeseries import LombScargle
 
 N_DRAWS = 1000
 N_TUNE = 1000
 N_PPC = 200 # No. prior predictive samples
 N_NEW = 200 # No. posterior predictive samples
+
 
 def plot_lc(path_to_csv):
     """Plot light curve from raw CSV data including 1 sigma error bars and overall mean."""
@@ -398,4 +405,3 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
         gpSE_gpM32_dag = pm.model_to_graphviz(model)
 
     return gpSE_gpM32_trace, gpSE_gpM32_dag
-
