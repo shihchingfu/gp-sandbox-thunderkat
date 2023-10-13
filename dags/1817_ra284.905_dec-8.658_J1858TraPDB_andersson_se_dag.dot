@@ -1,0 +1,35 @@
+digraph {
+	log_eta_SE [label="log_eta_SE
+~
+Uniform" shape=ellipse]
+	eta_SE [label="eta_SE
+~
+Deterministic" shape=box]
+	ell_SE [label="ell_SE
+~
+Deterministic" shape=box]
+	log_2ell_SE_sq [label="log_2ell_SE_sq
+~
+Uniform" shape=ellipse]
+	subgraph cluster25 {
+		sig [label="sig
+~
+HalfNormal" shape=ellipse]
+		y [label="y
+~
+MvNormal" shape=ellipse style=filled]
+		label=25 labeljust=r labelloc=b style=rounded
+	}
+	subgraph cluster300 {
+		f_star [label="f_star
+~
+MvNormal" shape=ellipse]
+		label=300 labeljust=r labelloc=b style=rounded
+	}
+	log_2ell_SE_sq -> ell_SE
+	log_eta_SE -> eta_SE
+	eta_SE -> y
+	ell_SE -> y
+	eta_SE -> f_star
+	ell_SE -> f_star
+}

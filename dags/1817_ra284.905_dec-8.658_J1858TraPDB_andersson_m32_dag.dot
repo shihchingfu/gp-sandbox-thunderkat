@@ -1,0 +1,35 @@
+digraph {
+	log_2ell_M32_sq [label="log_2ell_M32_sq
+~
+Uniform" shape=ellipse]
+	eta_M32 [label="eta_M32
+~
+Deterministic" shape=box]
+	log_eta_M32 [label="log_eta_M32
+~
+Uniform" shape=ellipse]
+	ell_M32 [label="ell_M32
+~
+Deterministic" shape=box]
+	subgraph cluster25 {
+		sig [label="sig
+~
+HalfNormal" shape=ellipse]
+		y [label="y
+~
+MvNormal" shape=ellipse style=filled]
+		label=25 labeljust=r labelloc=b style=rounded
+	}
+	subgraph cluster300 {
+		f_star [label="f_star
+~
+MvNormal" shape=ellipse]
+		label=300 labeljust=r labelloc=b style=rounded
+	}
+	log_2ell_M32_sq -> ell_M32
+	log_eta_M32 -> eta_M32
+	ell_M32 -> y
+	eta_M32 -> y
+	ell_M32 -> f_star
+	eta_M32 -> f_star
+}
