@@ -255,20 +255,15 @@ def fit_sem32_gp(path_to_csv, multiplicative_kernel=False, rng_seed=None):
         log_2ell_M_sq = pm.Uniform("log_2ell_M_sq", lower=-10, upper=math.log(2*t_range**2))
         ell_M = pm.Deterministic("ell_M", 0.5*math.sqrt(2) * pm.math.exp(0.5*log_2ell_M_sq))
 
+        log_eta= pm.Uniform("log_eta", lower=-15, upper=5)
+        eta = pm.Deterministic("eta", pm.math.exp(log_eta))
+
         if not multiplicative_kernel:
 
-            log_eta_SE= pm.Uniform("log_eta_SE", lower=-15, upper=5)
-            eta_SE = pm.Deterministic("eta_SE", pm.math.exp(log_eta_SE))
-
-            log_eta_M= pm.Uniform("log_eta_M", lower=-15, upper=5)
-            eta_M = pm.Deterministic("eta_M", pm.math.exp(log_eta_M))
-
-            cov_func = eta_SE**2 * pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE) + \
-                eta_M**2 * pm.gp.cov.Matern32(input_dim=1, ls=ell_M)
+            cov_func = eta**2 * \
+                (pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE) + \
+                 eta**2 * pm.gp.cov.Matern32(input_dim=1, ls=ell_M))
         else:
-
-            log_eta= pm.Uniform("log_eta", lower=-15, upper=5)
-            eta = pm.Deterministic("eta", pm.math.exp(log_eta))
 
             cov_func = eta**2 * pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE) * \
                 pm.gp.cov.Matern32(input_dim=1, ls=ell_M)
