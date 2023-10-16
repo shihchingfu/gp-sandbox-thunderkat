@@ -2,22 +2,22 @@ digraph {
 	eta_SE [label="eta_SE
 ~
 Deterministic" shape=box]
-	log_eta_SE [label="log_eta_SE
+	log_2ell_SE_sq [label="log_2ell_SE_sq
 ~
 Uniform" shape=ellipse]
 	ell_SE [label="ell_SE
 ~
 Deterministic" shape=box]
-	log_2ell_SE_sq [label="log_2ell_SE_sq
+	log_eta_SE [label="log_eta_SE
 ~
 Uniform" shape=ellipse]
 	subgraph cluster21 {
-		sig [label="sig
-~
-HalfNormal" shape=ellipse]
 		y [label="y
 ~
 MvNormal" shape=ellipse style=filled]
+		sig [label="sig
+~
+HalfNormal" shape=ellipse]
 		label=21 labeljust=r labelloc=b style=rounded
 	}
 	subgraph cluster300 {
@@ -29,7 +29,9 @@ MvNormal" shape=ellipse]
 	log_2ell_SE_sq -> ell_SE
 	log_eta_SE -> eta_SE
 	eta_SE -> y
+	sig -> y
 	ell_SE -> y
 	eta_SE -> f_star
+	sig -> f_star
 	ell_SE -> f_star
 }
