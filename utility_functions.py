@@ -111,6 +111,48 @@ def plot_traces(path_to_trace, variable_names=None):
     this_trace = az.from_netcdf(filename=path_to_trace)
     return az.plot_trace(this_trace, var_names=variable_names, combined=False)
 
+def plot_welch_psd(trace, variable_name="f_star"):
+    """Plot Welch approximated power spectral density (PSD) of GP posterior predictive samples."""
+
+    WELCH_NFFT=512
+    WELCH_DETREND=False
+    WELCH_SCALING="density"
+    WELCH_AVERAGE="median"
+
+    postpred_DataArray = az.extract(trace, "posterior_predictive", var_names=variable_name)
+
+    freqs_nd, welch_psds_nd  = signal.welch(
+        x=postpred_DataArray, axis=0,
+        fs=1,
+        nfft=WELCH_NFFT, detrend=WELCH_DETREND, scaling=WELCH_SCALING, average=WELCH_AVERAGE
+    )
+
+    welch_psds_dataset = xr.Dataset(
+        data_vars=dict(
+            power=(["freq", "sample"], welch_psds_nd)
+        ),
+        coords=dict(
+            freq=freqs_nd,
+            sample=range(1,postpred_DataArray.shape[1] + 1)
+        )
+    )
+
+    psd_median = welch_psds_dataset.median(dim="sample").to_array().to_numpy().flatten()
+    psd_q975 = welch_psds_dataset.quantile(q=0.975, dim="sample").to_array().to_numpy().flatten()
+    psd_q84 = welch_psds_dataset.quantile(q=0.84, dim="sample").to_array().to_numpy().flatten()
+    psd_q16 = welch_psds_dataset.quantile(q=0.16, dim="sample").to_array().to_numpy().flatten()
+    psd_q025 = welch_psds_dataset.quantile(q=0.025, dim="sample").to_array().to_numpy().flatten()
+
+    fig = plt.figure(figsize=(12, 5))
+    ax = fig.add_subplot(1,1,1)
+    ax.fill_between(freqs_nd, psd_q16, psd_q84, alpha=0.7, color="blue", label=r"68% HDI")
+    ax.fill_between(freqs_nd, psd_q025, psd_q975, alpha=0.5, color="blue", label=r"95% HDI")
+    ax.loglog(freqs_nd, psd_median, lw=2,color="red", alpha=0.8, label=r"Median")
+    ax.set_xlabel("Frequency of modulation (Hz)")
+    ax.set_ylabel(r"PSD (Jy$^2$ Hz)")
+    ax.set_title(f"Welch PSD of {variable_name}")
+    ax.legend()
+
 def fit_se_gp(path_to_csv, rng_seed=None):
     """Fit GP using squared exponential kernel."""
 
@@ -144,7 +186,6 @@ def fit_se_gp(path_to_csv, rng_seed=None):
         )
 
         se_dag = pm.model_to_graphviz(model)
-
         se_trace = pm.sample_prior_predictive(samples=N_PPC, random_seed=rng_seed)
 
         se_trace.extend(
@@ -207,6 +248,7 @@ def fit_m32_gp(path_to_csv, rng_seed=None):
             sigma=sig
         )
 
+        m32_dag = pm.model_to_graphviz(model)
         m32_trace = pm.sample_prior_predictive(samples=N_PPC, random_seed=rng_seed)
 
         m32_trace.extend(
@@ -234,7 +276,6 @@ def fit_m32_gp(path_to_csv, rng_seed=None):
                 random_seed=rng_seed
             )
         )
-        m32_dag = pm.model_to_graphviz(model)
 
     return m32_trace, m32_dag
 
@@ -278,6 +319,7 @@ def fit_sem32_gp(path_to_csv, multiplicative_kernel=False, rng_seed=None):
             sigma=sig
         )
 
+        sem32_dag = pm.model_to_graphviz(model)
         sem32_trace = pm.sample_prior_predictive(samples=N_PPC, random_seed=rng_seed)
 
         sem32_trace.extend(
@@ -305,8 +347,6 @@ def fit_sem32_gp(path_to_csv, multiplicative_kernel=False, rng_seed=None):
                 random_seed=rng_seed
             )
         )
-        sem32_dag = pm.model_to_graphviz(model)
-
     return sem32_trace, sem32_dag
 
 def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
@@ -349,6 +389,7 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
             sigma=sig
         )
 
+        gpSE_gpM32_dag = pm.model_to_graphviz(model)
         gpSE_gpM32_trace = pm.sample_prior_predictive(samples=N_PPC, random_seed=rng_seed)
 
         gpSE_gpM32_trace.extend(
@@ -382,48 +423,5 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
                 random_seed=rng_seed
             )
         )
-        gpSE_gpM32_dag = pm.model_to_graphviz(model)
-
     return gpSE_gpM32_trace, gpSE_gpM32_dag
 
-def plot_welch_psd(trace, variable_name="f_star"):
-    """Plot Welch approximated power spectral density (PSD) of GP posterior predictive samples."""
-
-    WELCH_NFFT=512
-    WELCH_DETREND=False
-    WELCH_SCALING="density"
-    WELCH_AVERAGE="median"
-
-    postpred_DataArray = az.extract(trace, "posterior_predictive", var_names=variable_name)
-
-    freqs_nd, welch_psds_nd  = signal.welch(
-        x=postpred_DataArray, axis=0,
-        fs=1,
-        nfft=WELCH_NFFT, detrend=WELCH_DETREND, scaling=WELCH_SCALING, average=WELCH_AVERAGE
-    )
-
-    welch_psds_dataset = xr.Dataset(
-        data_vars=dict(
-            power=(["freq", "sample"], welch_psds_nd)
-        ),
-        coords=dict(
-            freq=freqs_nd,
-            sample=range(1,postpred_DataArray.shape[1] + 1)
-        )
-    )
-
-    psd_median = welch_psds_dataset.median(dim="sample").to_array().to_numpy().flatten()
-    psd_q975 = welch_psds_dataset.quantile(q=0.975, dim="sample").to_array().to_numpy().flatten()
-    psd_q84 = welch_psds_dataset.quantile(q=0.84, dim="sample").to_array().to_numpy().flatten()
-    psd_q16 = welch_psds_dataset.quantile(q=0.16, dim="sample").to_array().to_numpy().flatten()
-    psd_q025 = welch_psds_dataset.quantile(q=0.025, dim="sample").to_array().to_numpy().flatten()
-
-    fig = plt.figure(figsize=(12, 5))
-    ax = fig.add_subplot(1,1,1)
-    ax.fill_between(freqs_nd, psd_q16, psd_q84, alpha=0.7, color="blue", label=r"68% HDI")
-    ax.fill_between(freqs_nd, psd_q025, psd_q975, alpha=0.5, color="blue", label=r"95% HDI")
-    ax.loglog(freqs_nd, psd_median, lw=2,color="red", alpha=0.8, label=r"Median")
-    ax.set_xlabel("Frequency of modulation (Hz)")
-    ax.set_ylabel(r"PSD (Jy$^2$ Hz)")
-    ax.set_title(f"Welch PSD of {variable_name}")
-    ax.legend()

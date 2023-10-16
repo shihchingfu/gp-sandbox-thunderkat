@@ -5,25 +5,25 @@ Deterministic" shape=box]
 	eta [label="eta
 ~
 Deterministic" shape=box]
-	ell_M [label="ell_M
-~
-Deterministic" shape=box]
 	log_2ell_M_sq [label="log_2ell_M_sq
 ~
 Uniform" shape=ellipse]
 	log_2ell_SE_sq [label="log_2ell_SE_sq
 ~
 Uniform" shape=ellipse]
+	ell_M [label="ell_M
+~
+Deterministic" shape=box]
 	log_eta [label="log_eta
 ~
 Uniform" shape=ellipse]
 	subgraph cluster28 {
-		y [label="y
-~
-MvNormal" shape=ellipse style=filled]
 		sig [label="sig
 ~
 HalfNormal" shape=ellipse]
+		y [label="y
+~
+MvNormal" shape=ellipse style=filled]
 		label=28 labeljust=r labelloc=b style=rounded
 	}
 	subgraph cluster300 {
@@ -35,10 +35,12 @@ MvNormal" shape=ellipse]
 	log_2ell_SE_sq -> ell_SE
 	log_2ell_M_sq -> ell_M
 	log_eta -> eta
-	eta -> y
+	sig -> y
 	ell_SE -> y
+	eta -> y
 	ell_M -> y
-	eta -> f_star
+	sig -> f_star
 	ell_SE -> f_star
+	eta -> f_star
 	ell_M -> f_star
 }
