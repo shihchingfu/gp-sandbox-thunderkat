@@ -66,7 +66,7 @@ def plot_postpred_samples(path_to_trace, path_to_csv, variable_name="f_star"):
         plot_samples=False
     )
     plt.plot(this_xnew.flatten(), y_postpred_median, "y", linewidth=1, label="Median")
-    plt.title(f"Post. pred. samples ({path_to_trace.stem})")
+    plt.title(f"{variable_name} ({path_to_trace.stem})")
     plt.xlabel("Time")
     plt.ylabel("Flux")
     plt.legend()
@@ -425,5 +425,5 @@ def plot_welch_psd(trace, variable_name="f_star"):
     ax.loglog(freqs_nd, psd_median, lw=2,color="red", alpha=0.8, label=r"Median")
     ax.set_xlabel("Frequency of modulation (Hz)")
     ax.set_ylabel(r"PSD (Jy$^2$ Hz)")
-    ax.set_title("Welch PSD of post. pred. samples")
+    ax.set_title(f"Welch PSD of {variable_name}")
     ax.legend()
