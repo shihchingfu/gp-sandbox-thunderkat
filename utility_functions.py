@@ -34,6 +34,27 @@ def plot_lc(path_to_csv):
     plt.ylabel("Flux")
     plt.legend()
 
+def plot_priorpred_samples(path_to_trace, path_to_csv):
+    """Plot prior predictive samples and original data points"""
+
+    this_lc = pd.read_csv(path_to_csv)
+    this_trace = az.from_netcdf(filename=path_to_trace)
+
+    this_x = this_lc['mjd']
+    this_y = this_lc['f_peak']
+
+    fig = plt.figure(figsize=(12,5))
+    ax = fig.add_subplot(1,1,1)
+
+    for prior_pred in this_trace.prior_predictive.y.to_numpy()[0]:
+        ax.plot(this_x, prior_pred, lw=0.5, alpha=0.2, color="red")
+
+    ax.scatter(x=this_x, y=this_y, s=1.5, c="blue", zorder=10)
+    ax.axhline(0, color="black")
+    ax.set_title("Samples from the GP prior")
+    ax.set_ylabel("y")
+    ax.set_xlabel("t")
+
 def plot_postpred_samples(path_to_trace, path_to_csv, variable_name="f_star"):
     """Plot posterior predicted samples and original data light curve"""
 
@@ -153,7 +174,7 @@ def plot_welch_psd(trace, variable_name="f_star"):
     ax.set_title(f"Welch PSD of {variable_name}")
     ax.legend()
 
-def fit_se_gp(path_to_csv, rng_seed=None):
+def fit_se_gp(path_to_csv, zero_mean=True, rng_seed=None):
     """Fit GP using squared exponential kernel."""
 
     lc = pd.read_csv(path_to_csv)
@@ -161,6 +182,7 @@ def fit_se_gp(path_to_csv, rng_seed=None):
     y_stderr = lc["f_peak_err"].to_numpy()
     t = lc["mjd"].to_numpy()
 
+    y_mean = np.nanmean(y)
     t_min, t_range = np.nanmin(t), np.ptp(t)
     t = t - t_min # translate minimum to origin
 
@@ -173,7 +195,12 @@ def fit_se_gp(path_to_csv, rng_seed=None):
 
         cov_func = eta_SE**2 * pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE)
 
-        gp = pm.gp.Marginal(cov_func=cov_func) # zero mean function
+        if zero_mean:
+            mean_fn = pm.gp.mean.Zero()
+        else:
+            mean_fn = pm.gp.mean.Constant(y_mean)
+
+        gp = pm.gp.Marginal(mean_func=mean_fn, cov_func=cov_func)
 
         sig = pm.HalfNormal("sig", sigma=y_stderr)
         #cov_noise = pm.gp.cov.WhiteNoise(sigma=sig)
