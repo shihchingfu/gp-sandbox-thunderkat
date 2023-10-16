@@ -10,7 +10,7 @@ import xarray as xr
 from scipy import signal
 
 N_DRAWS = 1000
-N_TUNE = 1000
+N_TUNE = 2000
 N_PPC = 300 # No. prior predictive samples
 N_NEW = 300 # No. posterior predictive samples
 
@@ -34,7 +34,7 @@ def plot_lc(path_to_csv):
     plt.ylabel("Flux")
     plt.legend()
 
-def plot_postpred_samples(path_to_trace, path_to_csv):
+def plot_postpred_samples(path_to_trace, path_to_csv, variable_name="f_star"):
     """Plot posterior predicted samples and original data light curve"""
 
     this_lc = pd.read_csv(path_to_csv)
@@ -50,7 +50,7 @@ def plot_postpred_samples(path_to_trace, path_to_csv):
         num = len(this_trace.posterior_predictive.f_star_dim_2)
     ).reshape(-1,1)
 
-    y_postpred = az.extract(this_trace, "posterior_predictive", var_names=["f_star"])
+    y_postpred = az.extract(this_trace, "posterior_predictive", var_names=variable_name)
     y_postpred_median = y_postpred.median(dim="sample")
 
     fig = plt.figure(figsize=(12, 5))
@@ -134,14 +134,16 @@ def fit_se_gp(path_to_csv, rng_seed=None):
         gp = pm.gp.Marginal(cov_func=cov_func) # zero mean function
 
         sig = pm.HalfNormal("sig", sigma=y_stderr)
-        cov_noise = pm.gp.cov.WhiteNoise(sigma=y_stderr)
+        #cov_noise = pm.gp.cov.WhiteNoise(sigma=sig)
 
         y_ = gp.marginal_likelihood(
             "y", 
             X=t.reshape(-1,1),
             y=y.reshape(-1,1).flatten(),
-            sigma=cov_noise
+            sigma=sig
         )
+
+        se_dag = pm.model_to_graphviz(model)
 
         se_trace = pm.sample_prior_predictive(samples=N_PPC, random_seed=rng_seed)
 
@@ -170,7 +172,6 @@ def fit_se_gp(path_to_csv, rng_seed=None):
                 random_seed=rng_seed
             )
         )
-        se_dag = pm.model_to_graphviz(model)
 
     return se_trace, se_dag
 
@@ -193,17 +194,17 @@ def fit_m32_gp(path_to_csv, rng_seed=None):
         eta_M32 = pm.Deterministic("eta_M32", pm.math.exp(log_eta_M32))
 
         cov_func = eta_M32**2 * pm.gp.cov.Matern32(input_dim=1, ls=ell_M32)
-        
+
         gp = pm.gp.Marginal(cov_func=cov_func) # zero mean function
 
         sig = pm.HalfNormal("sig", sigma=y_stderr)
-        cov_noise = pm.gp.cov.WhiteNoise(sigma=y_stderr)
+        #cov_noise = pm.gp.cov.WhiteNoise(sigma=sig)
 
         y_ = gp.marginal_likelihood(
             "y", 
             X=t.reshape(-1,1),
             y=y.reshape(-1,1).flatten(),
-            sigma=cov_noise
+            sigma=sig
         )
 
         m32_trace = pm.sample_prior_predictive(samples=N_PPC, random_seed=rng_seed)
@@ -259,25 +260,22 @@ def fit_sem32_gp(path_to_csv, multiplicative_kernel=False, rng_seed=None):
         eta = pm.Deterministic("eta", pm.math.exp(log_eta))
 
         if not multiplicative_kernel:
-
             cov_func = eta**2 * \
-                (pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE) + \
-                 eta**2 * pm.gp.cov.Matern32(input_dim=1, ls=ell_M))
+                (pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE) + pm.gp.cov.Matern32(input_dim=1, ls=ell_M))
         else:
-
-            cov_func = eta**2 * pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE) * \
-                pm.gp.cov.Matern32(input_dim=1, ls=ell_M)
+            cov_func = eta**2 * \
+                pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE) * pm.gp.cov.Matern32(input_dim=1, ls=ell_M)
 
         gp = pm.gp.Marginal(cov_func=cov_func) # zero mean function
 
         sig = pm.HalfNormal("sig", sigma=y_stderr)
-        cov_noise = pm.gp.cov.WhiteNoise(sigma=y_stderr)
+        #cov_noise = pm.gp.cov.WhiteNoise(sigma=sig)
 
         y_ = gp.marginal_likelihood(
             "y",
             X=t.reshape(-1,1),
             y=y.reshape(-1,1).flatten(),
-            sigma=cov_noise
+            sigma=sig
         )
 
         sem32_trace = pm.sample_prior_predictive(samples=N_PPC, random_seed=rng_seed)
@@ -328,8 +326,8 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
         log_eta_SE= pm.Uniform("log_eta_SE", lower=-15, upper=5)
         eta_SE = pm.Deterministic("eta_SE", pm.math.exp(log_eta_SE))
 
-        cov_SE = eta_SE**2 * pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE) 
-        gp_SE = pm.gp.Marginal(cov_func=cov_SE) 
+        cov_SE = eta_SE**2 * pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE)
+        gp_SE = pm.gp.Marginal(cov_func=cov_SE)
 
         log_2ell_M32_sq = pm.Uniform("log_2ell_M32_sq", lower=-10, upper=math.log(2*t_range**2))
         ell_M32 = pm.Deterministic("ell_M32", 0.5*math.sqrt(2) * pm.math.exp(0.5*log_2ell_M32_sq))
@@ -342,13 +340,13 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
         gp = gp_SE + gp_M32
 
         sig = pm.HalfNormal("sig", sigma=y_stderr)
-        cov_noise = pm.gp.cov.WhiteNoise(sigma=y_stderr)
+        #cov_noise = pm.gp.cov.WhiteNoise(sigma=sig)
 
-        y_ = gp.marginal_likelihood(
-            "y",
+        f = gp.marginal_likelihood(
+            "f",
             X=t.reshape(-1,1),
             y=y.reshape(-1,1).flatten(),
-            sigma=cov_noise
+            sigma=sig
         )
 
         gpSE_gpM32_trace = pm.sample_prior_predictive(samples=N_PPC, random_seed=rng_seed)
@@ -369,12 +367,18 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
             num = N_NEW
         ).reshape(-1,1)
 
+        f_star_SE = gp_SE.conditional("f_star_SE", Xnew=t_new,
+                                      given={"X": t.reshape(-1,1), "y": y.reshape(-1,1).flatten(), "sigma": sig, "gp": gp})
+
+        f_star_M32 = gp_M32.conditional("f_star_M32", Xnew=t_new,
+                                      given={"X": t.reshape(-1,1), "y": y.reshape(-1,1).flatten(), "sigma": sig, "gp": gp})
+
         f_star = gp.conditional(name="f_star", Xnew=t_new, jitter=1e-6, pred_noise=False)
 
         gpSE_gpM32_trace.extend(
             pm.sample_posterior_predictive(
                 gpSE_gpM32_trace.posterior,
-                var_names=["f_star"],
+                var_names=["f_star", "f_star_SE", "f_star_M32"],
                 random_seed=rng_seed
             )
         )
@@ -382,15 +386,15 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
 
     return gpSE_gpM32_trace, gpSE_gpM32_dag
 
-def plot_welch_psd(trace):
-    """Function for plotting the Welch approximated power spectral density (PSD) of GP fitted posterior predictive samples."""
+def plot_welch_psd(trace, variable_name="f_star"):
+    """Plot Welch approximated power spectral density (PSD) of GP posterior predictive samples."""
 
     WELCH_NFFT=512
     WELCH_DETREND=False
     WELCH_SCALING="density"
     WELCH_AVERAGE="median"
 
-    postpred_DataArray = az.extract(trace, "posterior_predictive", var_names=["f_star"])
+    postpred_DataArray = az.extract(trace, "posterior_predictive", var_names=variable_name)
 
     freqs_nd, welch_psds_nd  = signal.welch(
         x=postpred_DataArray, axis=0,
