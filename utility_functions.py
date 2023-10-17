@@ -11,8 +11,8 @@ from scipy import signal
 
 N_DRAWS = 1000
 N_TUNE = 2000
-N_PPC = 300 # No. prior predictive samples
-N_NEW = 300 # No. posterior predictive samples
+N_PPC = N_DRAWS # No. prior predictive samples
+N_NEW = 300 # No. observation points in each posterior predictive sample
 
 def plot_lc(path_to_csv):
     """Plot light curve from raw CSV data including 1 sigma error bars and overall mean."""

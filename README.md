@@ -14,8 +14,8 @@ For a light curve each of the following models is fitted:
 
 1. GP using SE kernel
 2. GP using M32 kernel
-3. GP using SE + M32 kernel
+3. GP using SE $+$ M32 kernel
 4. Sum of SE GP and M32 GP
 5. GP using SE $\times$ M32 kernel
 
-
+The choice of the GP mean function as either a constant or zero can have marked effects on results.
