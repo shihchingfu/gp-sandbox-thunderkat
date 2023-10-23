@@ -1,0 +1,88 @@
+---
+title: "stan_fitting_428"
+format: html
+---
+
+```{r}
+library(tidyverse)
+library(here)
+library(cmdstanr)
+library(posterior)
+library(bayesplot)
+
+color_scheme_set("brightblue")
+register_knitr_engine(override = FALSE)
+```
+
+```{cmdstan, cache=TRUE, output.var = "marginal_model"}
+data {
+  int<lower=1> N;
+  array[N] real x;
+  vector[N] y;
+  int<lower=1> N_star;
+  vector[N_star] x_star;
+}
+transformed data {
+  vector[N] mu = rep_vector(0, N);
+}
+parameters {
+  real<lower=0> ell;
+  real<lower=0> eta;
+  real<lower=0> sigma;
+}
+model {
+  matrix[N, N] K = gp_exp_quad_cov(x, eta, ell);
+  matrix[N, N] L = cholesky_decompose(add_diag(K, sigma^2));
+
+  ell ~ inv_gamma(5, 5);
+  eta ~ std_normal();
+  sigma ~ std_normal();
+
+  y ~ multi_normal_cholesky(mu, L);
+}
+generated quantities {
+  real y_star[N_star] = multi_normal_cholesky_rng(mu, L);
+}
+```
+
+```{r}
+marginal_model$exe_file()
+```
+
+```{r}
+path_to_csv <- here("data_raw/428_ra236.530_dec-46.922_4U1543TraPDB_andersson.csv")
+data_df <- read_csv(path_to_csv, show_col_types = FALSE)
+str(data_df)
+```
+
+
+```{r}
+# names correspond to the data block in the Stan program
+data_list <- list(N = length(data_df$mjd), 
+                  x = data_df$mjd,
+                  y = data_df$f_peak)
+
+fit <- marginal_model$sample(
+  data = data_list,
+  seed = 123,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 500 # print update every 500 iters
+)
+```
+
+```{r}
+# summarise all variables with default and additional summary measures
+fit$cmdstan_summary()
+```
+
+
+```{r}
+mcmc_hist(fit$draws())
+```
+
+
+```{r}
+draws_gpcovf$
+```
+
