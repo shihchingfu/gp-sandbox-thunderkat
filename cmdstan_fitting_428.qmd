@@ -1,6 +1,7 @@
 ---
 title: "stan_fitting_428"
 format: html
+df-print: tibble
 ---
 
 ```{r}
@@ -71,7 +72,7 @@ transformed data {
   vector[N] mu = rep_vector(0, N);
 }
 parameters {
-  real<lower=0,upper=10> ell;
+  real<lower=0> ell;
   real<lower=0> eta;
   real<lower=0> sigma;
 }
@@ -79,7 +80,7 @@ model {
   matrix[N, N] K = gp_exp_quad_cov(x, eta, ell);
   matrix[N, N] L = cholesky_decompose(add_diag(K, sigma^2));
 
-  ell ~ inv_gamma(2, 2);
+  ell ~ inv_gamma(5, 5);
   eta ~ std_normal();
   sigma ~ std_normal();
 
@@ -115,23 +116,22 @@ fit <- marginal_model$sample(
 ```
 
 ```{r}
-# summarise all variables with default and additional summary measures
-fit$cmdstan_summary()
+fit$print(variables = c("eta", "ell", "sigma"))
 ```
 
 ```{r}
-mcmc_hist(fit$draws("ell"))
-mcmc_hist(fit$draws("eta"))
-mcmc_hist(fit$draws("sigma"))
+fit_draws <- as_draws_rvars(fit$draws())
+fit_draws
 ```
 
 ```{r}
-mcmc_hist(fit$draws("f_star[100]"))
+mcmc_hist(fit$draws(c("ell", "eta", "sigma")))
 ```
 
-
 ```{r}
+post_pred_draws <- as_draws_rvars(fit$draws("f_star"))
+
 ggplot() +
-  geom_point(aes(x = x_star, y = median(draws_f$f_star))) +
+  geom_line(aes(x = x_star, y = median(post_pred_draws$f_star)), colour = "red") +
   geom_point(aes(x = data_df$mjd, y = data_df$f_peak), colour = "blue")
 ```
