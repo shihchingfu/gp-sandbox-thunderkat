@@ -1,6 +1,7 @@
 ---
 title: "Fitting GP to lightcurve 428_...in Stan"
 format: html
+self-contained: true
 ---
 
 Notebook outlining the fitting of GP to thunderKAT lightcurve ID$ 428_...
@@ -52,7 +53,7 @@ $$\eta \sim \mathcal{N}^+(0,1)$$
 
 $$\sigma_\textrm{noise} \sim \mathcal{N}^+(0,1)$$
 
-```{cmdstan, cache=TRUE, output.var = "base_model"}
+```{cmdstan, output.var = "base_model"}
 data {
   int<lower=1> N;
   array[N] real x;
@@ -131,7 +132,7 @@ $$\eta \sim \mathcal{N}^+(0,1)$$
 
 $$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}(\boldsymbol{y})))$$
 
-```{cmdstan, cache=TRUE, output.var = "err_model"}
+```{cmdstan, output.var = "err_model"}
 functions {
   vector gp_pred_rng(array[] real x2,
                      vector y1,
@@ -254,7 +255,7 @@ ggplot() +
   geom_ribbon(aes(ymin = quantile(post_pred_draws$f_star, probs = 0.05)[1,],
                   ymax = quantile(post_pred_draws$f_star, probs = 0.95)[1,]),
               fill = "blue", alpha = 0.3) +
-  geom_line(aes(y = median(post_pred_draws$f_star)), size = 1, colour = "black") +
+  geom_line(aes(y = median(post_pred_draws$f_star)), linewidth = 1, colour = "black") +
   geom_point(aes(x = data_df$mjd, y = data_df$f_peak), size = 2, colour = "red") +
   labs(x = "MJD", y = "Flux Density") +
   theme_classic()
