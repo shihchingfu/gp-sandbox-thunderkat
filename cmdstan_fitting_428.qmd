@@ -1,11 +1,14 @@
 ---
-title: "stan_fitting_428"
+title: "Fitting GP to lightcurve 428_...in Stan"
 format: html
-df-print: tibble
 ---
 
-```{r}
-library(tidyverse)
+Notebook outlining the fitting of GP to thunderKAT lightcurve ID$ 428_...
+
+```{r setup}
+library(conflicted)
+library(ggplot2)
+library(readr)
 library(here)
 library(cmdstanr)
 library(posterior)
@@ -15,58 +18,45 @@ color_scheme_set("brightblue")
 register_knitr_engine(override = FALSE)
 ```
 
-```{r}
-path_to_csv <- here("data_raw/428_ra236.530_dec-46.922_4U1543TraPDB_andersson.csv")
+```{r fig.width=9}
+csv_fname <- "428_ra236.530_dec-46.922_4U1543TraPDB_andersson.csv"
+path_to_csv <- here("data_raw", csv_fname)
 data_df <- read_csv(path_to_csv, show_col_types = FALSE)
 
 data_df |> 
   ggplot() +
-  aes(x = mjd, y = f_peak) +
-  geom_point()
+  aes(x = mjd, y = f_peak, ymax = f_peak + f_peak_err, ymin = f_peak - f_peak_err) +
+  geom_point(colour = "blue") +
+  geom_linerange() +
+  labs(title = csv_fname, x = "MJD", y = "Flux Density") +
+  theme_classic()
 ```
 
-```{cmdstan, cache=TRUE, output.var = "marginal_model"}
-functions {
-  vector gp_pred_rng(array[] real x2,
-                     vector y1,
-                     array[] real x1,
-                     real eta,
-                     real ell,
-                     real sigma,
-                     real jitter) {
-    int N1 = rows(y1);
-    int N2 = size(x2);
-    vector[N2] f2;
-    {
-      matrix[N1, N1] L_K;
-      vector[N1] K_div_y1;
-      matrix[N1, N2] k_x1_x2;
-      matrix[N1, N2] v_pred;
-      vector[N2] f2_mu;
-      matrix[N2, N2] cov_f2;
-      matrix[N1, N1] K;
-      K = gp_exp_quad_cov(x1, eta, ell);
-      for (n in 1:N1)
-        K[n, n] = K[n,n] + square(sigma);
-      L_K = cholesky_decompose(K);
-      K_div_y1 = mdivide_left_tri_low(L_K, y1);
-      K_div_y1 = mdivide_right_tri_low(K_div_y1', L_K)';
-      k_x1_x2 = gp_exp_quad_cov(x1, x2, eta, ell);
-      f2_mu = (k_x1_x2' * K_div_y1);
-      v_pred = mdivide_left_tri_low(L_K, k_x1_x2);
-      cov_f2 = gp_exp_quad_cov(x2, eta, ell) - v_pred' * v_pred;
+## Base Model
 
-      f2 = multi_normal_rng(f2_mu, add_diag(cov_f2, rep_vector(jitter, N2)));
-    }
-    return f2;
-  }
-}
+- Zero mean function
+- Homoskedastic noise
+- Not using data on error in observations
+- Wide prior on observational errors
+
+$$y \sim \mathcal{N}(f(x), \sigma_\textrm{noise}^2)$$
+
+$$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
+
+
+$$k(x,x') = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
+
+$$\ell \sim \mathrm{InvGamma}(5,5)$$
+
+$$\eta \sim \mathcal{N}^+(0,1)$$
+
+$$\sigma_\textrm{noise} \sim \mathcal{N}^+(0,1)$$
+
+```{cmdstan, cache=TRUE, output.var = "base_model"}
 data {
   int<lower=1> N;
   array[N] real x;
   vector[N] y;
-  int<lower=1> N_star;
-  array[N_star] real x_star;
 }
 transformed data {
   vector[N] mu = rep_vector(0, N);
@@ -86,52 +76,208 @@ model {
 
   y ~ multi_normal_cholesky(mu, L);
 }
+```
+
+```{r message=FALSE}
+data_list <- list(N = length(data_df$mjd), 
+                  x = data_df$mjd,
+                  y = data_df$f_peak)
+
+base_fit <- base_model$sample(
+  data = data_list,
+  seed = 1,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 500
+)
+```
+
+```{r}
+base_fit$cmdstan_diagnose()
+```
+
+```{r}
+base_fit$print(variables = c("eta", "ell", "sigma"), digits = 6)
+```
+
+```{r}
+base_draws_arr <- base_fit$draws(format = "draws_array")
+mcmc_trace(base_draws_arr, pars = c("eta", "ell", "sigma"), facet_args = list(nrow = 2))
+```
+
+```{r}
+mcmc_dens(base_draws_arr, pars = c("eta", "ell", "sigma"), facet_args = list(nrow = 2))
+```
+
+```{r}
+mcmc_pairs(base_draws_arr, pars = c("eta", "ell", "sigma"), off_diag_fun = "hex")
+```
+
+## Observational Errors Model
+
+- Zero mean function
+- Include data on error in observations of $y_i$
+- Heteroskedastic (Gaussian) noise
+
+$$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
+
+$$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
+
+$$k(x,x') = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
+
+$$\ell \sim \mathrm{InvGamma}(5,5)$$
+
+$$\eta \sim \mathcal{N}^+(0,1)$$
+
+$$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}(\boldsymbol{y})))$$
+
+```{cmdstan, cache=TRUE, output.var = "err_model"}
+functions {
+  vector gp_pred_rng(array[] real x2,
+                     vector y1,
+                     array[] real x1,
+                     real eta,
+                     real ell,
+                     vector sigma,
+                     real jitter) {
+    int N1 = rows(y1);
+    int N2 = size(x2);
+    vector[N2] f2;
+    {
+      matrix[N1, N1] L_K;
+      vector[N1] K_div_y1;
+      matrix[N1, N2] k_x1_x2;
+      matrix[N1, N2] v_pred;
+      vector[N2] f2_mu;
+      matrix[N2, N2] cov_f2;
+      matrix[N1, N1] K;
+      K = gp_exp_quad_cov(x1, eta, ell);
+      for (n in 1:N1)
+        K[n, n] = K[n,n] + square(sigma[n]);
+      L_K = cholesky_decompose(K);
+      K_div_y1 = mdivide_left_tri_low(L_K, y1);
+      K_div_y1 = mdivide_right_tri_low(K_div_y1', L_K)';
+      k_x1_x2 = gp_exp_quad_cov(x1, x2, eta, ell);
+      f2_mu = (k_x1_x2' * K_div_y1);
+      v_pred = mdivide_left_tri_low(L_K, k_x1_x2);
+      cov_f2 = gp_exp_quad_cov(x2, eta, ell) - v_pred' * v_pred;
+
+      f2 = multi_normal_rng(f2_mu, add_diag(cov_f2, rep_vector(jitter, N2)));
+    }
+    return f2;
+  }
+}
+data {
+  int<lower=1> N;
+  array[N] real x;
+  vector[N] y;
+  vector[N] y_stderr;
+  int<lower=1> N_star;
+  array[N_star] real x_star;
+}
+transformed data {
+  vector[N] mu = rep_vector(0, N);
+}
+parameters {
+  real<lower=0> ell;
+  real<lower=0> eta;
+  vector<lower=0>[N] sigma;
+}
+model {
+  matrix[N, N] K = gp_exp_quad_cov(x, eta, ell);
+  matrix[N, N] L = cholesky_decompose(add_diag(K, sigma^2));
+
+  ell ~ inv_gamma(5, 5);
+  eta ~ std_normal();
+  sigma ~ normal(y_stderr, sd(y_stderr));
+
+  y ~ multi_normal_cholesky(mu, L);
+}
 generated quantities {
   vector[N_star] f_star = gp_pred_rng(x_star, y, x, eta, ell, sigma, 1e-9);
 }
 ```
 
-```{r}
-marginal_model$exe_file()
-```
-
 ```{r message=FALSE}
-x_star <- seq(from = min(data_df$mjd), to = max(data_df$mjd), length.out = 100)
+x_star <- seq(from = min(data_df$mjd), to = max(data_df$mjd), length.out = 200)
 
-# names correspond to the data block in the Stan program
 data_list <- list(N = length(data_df$mjd), 
                   x = data_df$mjd,
                   y = data_df$f_peak,
+                  y_stderr = data_df$f_peak_err,
                   x_star = x_star,
                   N_star = length(x_star)
                   )
 
-fit <- marginal_model$sample(
+err_fit <- err_model$sample(
   data = data_list,
-  seed = 123,
+  seed = 1,
   chains = 4,
   parallel_chains = 4,
-  refresh = 500 # print update every 500 iters
+  refresh = 500
 )
 ```
 
 ```{r}
-fit$print(variables = c("eta", "ell", "sigma"))
+err_fit$cmdstan_diagnose()
 ```
 
 ```{r}
-fit_draws <- as_draws_rvars(fit$draws())
-fit_draws
+err_fit$print(variables = c("eta", "ell", "sigma"), digits = 6, max_rows = 23)
 ```
 
 ```{r}
-mcmc_hist(fit$draws(c("ell", "eta", "sigma")))
+err_draws_arr <- err_fit$draws(format = "draws_array")
+mcmc_trace(err_draws_arr, pars = c("eta", "ell"), facet_args = list(nrow = 2))
 ```
 
 ```{r}
-post_pred_draws <- as_draws_rvars(fit$draws("f_star"))
+mcmc_dens(err_draws_arr, pars = c("eta", "ell"), facet_args = list(nrow = 2))
+```
+
+```{r}
+mcmc_pairs(err_draws_arr, pars = c("eta", "ell"), off_diag_fun = "hex")
+```
+
+```{r fig.height=12}
+mcmc_dens(err_draws_arr, regex_pars = "sigma", facet_args = list(nrow = 7))
+```
+
+```{r fig.width=9}
+post_pred_draws <- as_draws_rvars(err_fit$draws("f_star"))
 
 ggplot() +
-  geom_line(aes(x = x_star, y = median(post_pred_draws$f_star)), colour = "red") +
-  geom_point(aes(x = data_df$mjd, y = data_df$f_peak), colour = "blue")
+  aes(x = x_star) +
+  geom_ribbon(aes(ymin = quantile(post_pred_draws$f_star, probs = 0.16)[1,],
+                  ymax = quantile(post_pred_draws$f_star, probs = 0.84)[1,]),
+              fill = "blue", alpha = 0.3) +
+  geom_ribbon(aes(ymin = quantile(post_pred_draws$f_star, probs = 0.05)[1,],
+                  ymax = quantile(post_pred_draws$f_star, probs = 0.95)[1,]),
+              fill = "blue", alpha = 0.3) +
+  geom_line(aes(y = median(post_pred_draws$f_star)), size = 1, colour = "black") +
+  geom_point(aes(x = data_df$mjd, y = data_df$f_peak), size = 2, colour = "red") +
+  labs(x = "MJD", y = "Flux Density") +
+  theme_classic()
 ```
+
+
+## Non-zero Mean function
+
+- Constant mean function
+- Include data on error in observations of $y_i$
+- Heteroskedastic (Gaussian) noise
+
+$$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
+
+$$f \sim \mathcal{GP}(C, k(x,  x'))$$
+
+$$C \sim \mathcal{U}[0,1]$$
+
+$$k(x,x') = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
+
+$$\ell \sim \mathrm{InvGamma}(5,5)$$
+
+$$\eta \sim \mathcal{N}^+(0,1)$$
+
+$$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}(\boldsymbol{y})))$$
+
