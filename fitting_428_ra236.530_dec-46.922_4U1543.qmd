@@ -134,6 +134,7 @@ $$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}
 
 ```{cmdstan, output.var = "err_model"}
 functions {
+  // c.f. Rasmussen & Williams (2006), Algorithm 2.1
   vector gp_pred_rng(array[] real x2,
                      vector y1,
                      array[] real x1,
