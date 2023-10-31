@@ -4,7 +4,7 @@ execute:
   echo: false
 format: 
   html:
-    df-print: kable 
+    df-print: default 
 self-contained: true
 ---
 
@@ -15,6 +15,7 @@ Notebook outlining the fitting of GP to thunderKAT lightcurve ID$ 428_...
 library(conflicted)
 library(ggplot2)
 library(readr)
+library(dplyr)
 library(here)
 library(cmdstanr)
 library(posterior)
@@ -22,6 +23,38 @@ library(bayesplot)
 
 color_scheme_set("brightblue")
 register_knitr_engine(override = FALSE)
+
+plot_PSD <- function(postpred_draws, nsamples = 200) {
+  
+  draws_subset <- 
+    subset_draws(postpred_draws, 
+                 variable = "f_star", 
+                 draw = 1:nsamples) |> 
+    as_draws_matrix() |> 
+    t()
+  
+  spec <- spectrum(draws_subset, plot = FALSE)
+  
+  data.frame(
+    frequency = spec$freq,
+    power = spec$spec
+  ) |> 
+    rowwise() |> 
+    mutate(q0.05 = quantile(c_across(starts_with("power.")), probs = 0.05),
+           q0.16 = quantile(c_across(starts_with("power.")), probs = 0.16),
+           median = median(c_across(starts_with("power."))),
+           q0.84 = quantile(c_across(starts_with("power.")), probs = 0.84),
+           q0.95 = quantile(c_across(starts_with("power.")), probs = 0.95)) |> 
+    ggplot() +
+    aes(x = frequency, y = median) +
+    geom_ribbon(aes(ymin = q0.16, ymax = q0.84), fill = "blue", alpha = 0.3) +
+    geom_ribbon(aes(ymin = q0.05, ymax = q0.95), fill = "blue", alpha = 0.3) +
+    geom_line() +
+    scale_x_log10() +
+    scale_y_log10() +
+    labs(x = "Frequency", y = "Spectral Density") +
+    theme_bw()
+}
 ```
 
 ```{r}
@@ -29,13 +62,14 @@ csv_fname <- "428_ra236.530_dec-46.922_4U1543TraPDB_andersson.csv"
 path_to_csv <- here("data_raw", csv_fname)
 data_df <- read_csv(path_to_csv, show_col_types = FALSE)
 
-x_star <- seq(from = min(data_df$mjd), to = max(data_df$mjd), length.out = 200)
+x_star <- seq(from = min(data_df$mjd), to = max(data_df$mjd), length.out = 300)
 
 data_df |> 
   ggplot() +
-  aes(x = mjd, y = f_peak, ymax = f_peak + f_peak_err, ymin = f_peak - f_peak_err) +
-  geom_point(colour = "blue") +
-  geom_linerange() +
+  aes(x = mjd, y = f_peak, 
+      ymax = f_peak + f_peak_err, ymin = f_peak - f_peak_err) +
+  geom_point(colour = "red") +
+  geom_linerange(colour = "red") +
   labs(title = csv_fname, x = "MJD", y = "Flux Density (Jy)") +
   theme_classic()
 ```
@@ -142,6 +176,10 @@ ggplot() +
 
 The fitted model has a very long lengthscale, comparable to the length of the observational window. The estimated observational noise has a standard deviation more than an order of magnitude of that in the original data. The combination of these parameters has lead to a very smooth fit that passes through the middle of the observed data points rather than through any datapoints themselves.
 
+```{r}
+#| message: false
+plot_PSD(basic_postpred_draws)
+```
 
 # Observational Errors Model
 
@@ -236,6 +274,11 @@ ggplot() +
 
 By including the observed observational errors for setting priors on the Gaussian noise of each observation, the fitted median passes through each of the observed points.
 
+```{r}
+#| message: false
+plot_PSD(err_postpred_draws)
+```  
+
 # Constant (non-zero) Mean function
 
 - Constant mean function
@@ -328,7 +371,10 @@ ggplot() +
   theme_classic()
 ```
 
-
+```{r}
+#| message: false
+plot_PSD(flat_mean_postpred_draws)
+```
 
 # Fixed constant (non-zero) Mean function
 
@@ -393,6 +439,11 @@ ggplot() +
   theme_classic()
 ```
 
+```{r}
+#| message: false
+plot_PSD(fixed_mean_postpred_draws)
+```
+
 ## Mean Function = 0.195
 
 ```{r}
@@ -432,6 +483,11 @@ ggplot() +
   geom_point(aes(x = data_df$mjd, y = data_df$f_peak), size = 2, colour = "red") +
   labs(x = "MJD", y = "Flux Density") +
   theme_classic()
+```
+
+```{r}
+#| message: false
+plot_PSD(fixed_mean_postpred_draws)
 ```
 
 ## Mean Function = 0.18
@@ -475,3 +531,17 @@ ggplot() +
   theme_classic()
 ```
 
+```{r}
+#| message: false
+plot_PSD(fixed_mean_postpred_draws)
+```
+
+# Matern 3/2 kernel, zero mean
+
+# SE + Matern 3/2 additive kernel
+
+# SE x Matern 3/2 multiplicative kernel
+
+# SE GP + Matern 3/2 GP
+
+# SE + Matern 3/2 + QP kernel
