@@ -55,7 +55,7 @@ parameters {
   real<lower=0> ell;
   real<lower=0> eta;
   vector<lower=0>[N] sigma;
-  real <lower=0, upper=1> C; // Uniform prior on flat mean function
+  real <lower=-1, upper=1> C; // Uniform prior on flat mean function
 }
 model {
   matrix[N, N] K = gp_exp_quad_cov(x, eta, ell);

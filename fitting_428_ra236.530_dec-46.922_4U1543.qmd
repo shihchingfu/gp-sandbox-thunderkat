@@ -4,8 +4,10 @@ execute:
   echo: false
 format: 
   html:
+    toc: true
     df-print: default 
 self-contained: true
+number-sections: true
 ---
 
 Notebook outlining the fitting of GP to thunderKAT lightcurve ID$ 428_...
@@ -24,15 +26,40 @@ library(bayesplot)
 color_scheme_set("brightblue")
 register_knitr_engine(override = FALSE)
 
-plot_PSD <- function(postpred_draws, nsamples = 200) {
+mcmc_plots <- function(fit, variables) {
+  draws_arr <- fit$draws(format = "draws_array")
+  mcmc_trace(draws_arr, pars = variables, facet_args = list(nrow = 2)) |> print()
+  mcmc_dens(draws_arr, pars = variables, facet_args = list(nrow = 2)) |> print()
+  mcmc_pairs(draws_arr, pars = variables, off_diag_fun = "hex") |> print()
+}
+
+plot_postpred <- function(fit, x, y, y_err, x_star) {
+  postpred_draws <- as_draws_rvars(fit$draws("f_star"))
   
+  ggplot() +
+    aes(x = x_star) +
+    geom_ribbon(aes(ymin = quantile(postpred_draws$f_star, probs = 0.16)[1,],
+                    ymax = quantile(postpred_draws$f_star, probs = 0.84)[1,]),
+                fill = "blue", alpha = 0.3) +
+    geom_ribbon(aes(ymin = quantile(postpred_draws$f_star, probs = 0.05)[1,],
+                    ymax = quantile(postpred_draws$f_star, probs = 0.95)[1,]),
+                fill = "blue", alpha = 0.3) +
+    geom_line(aes(y = median(postpred_draws$f_star)), colour = "black") +
+    geom_linerange(aes(x = x, y = y, 
+                       ymax = y + y_err, ymin = y - y_err), colour = "red")  +
+    geom_point(aes(x = x, y = y), size = 2, colour = "red") +
+    labs(x = "MJD", y = "Flux Density") +
+    theme_classic()
+}
+
+plot_PSD <- function(fit, nsamples = 200) {
   draws_subset <- 
-    subset_draws(postpred_draws, 
+    subset_draws(fit$draws(), 
                  variable = "f_star", 
                  draw = 1:nsamples) |> 
     as_draws_matrix() |> 
     t()
-  
+
   spec <- spectrum(draws_subset, plot = FALSE)
   
   data.frame(
@@ -57,12 +84,17 @@ plot_PSD <- function(postpred_draws, nsamples = 200) {
 }
 ```
 
+# Light Curve
+
 ```{r}
 csv_fname <- "428_ra236.530_dec-46.922_4U1543TraPDB_andersson.csv"
 path_to_csv <- here("data_raw", csv_fname)
 data_df <- read_csv(path_to_csv, show_col_types = FALSE)
 
-x_star <- seq(from = min(data_df$mjd), to = max(data_df$mjd), length.out = 300)
+x <- data_df$mjd
+y <- data_df$f_peak
+y_err <- data_df$f_peak_err
+x_star <- seq(from = min(x), to = max(x), length.out = 300)
 
 data_df |> 
   ggplot() +
@@ -79,32 +111,28 @@ data_df |>
 summary(data_df[c("f_peak", "f_peak_err", "mjd")])
 ```
 
-- The light curve has $N =$ `r NROW(data_df)` observations over a range of `r diff(range(data_df$mjd))` days.
-- The mean flux density is $\bar{y} =$ `r mean(data_df$f_peak)` Jy.
-- The mean standard error is `r mean(data_df$f_peak)` Jy.
+- The light curve has $N =$ `r NROW(data_df)` observations over a range of `r diff(range(x))` days.
+- The mean flux density is $\bar{y} =$ `r mean(y)` Jy.
+- The mean standard error is `r mean(y_err)` Jy.
 - The observational noise is faint relative to the brightness of the observations. 
 - Observations are evenly spread over the time range.
 - There are hints of correlated noise components in the light curve.
 
-# Basic Model
+# SE Basic Model
 
-- Zero constant mean function
-- Homoskedastic noise
-- Not using data on error in observations
-- Wide prior on observational errors
+- Zero constant mean function.
+- Squared Exponential kernel function.
+- Homoskedastic noise.
+- Wide prior on observational noise, uninformed by observational noise estimates.
 
-$$y \sim \mathcal{N}(f(x), \sigma_\textrm{noise}^2)$$
-
-$$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
-
-
-$$k(x,x') = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
-
-$$\ell \sim \mathrm{InvGamma}(5,5)$$
-
-$$\eta \sim \mathcal{N}^+(0,1)$$
-
-$$\sigma_\textrm{noise} \sim \mathcal{N}^+(0,1)$$
+\begin{align}
+y \sim & \mathcal{N}(f(x), \sigma_\textrm{noise}^2)\\
+f \sim & \mathcal{GP}(\boldsymbol{0}, k(x,  x'))\\
+k(x,x') = & \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}\\
+\ell \sim & \mathrm{InvGamma}(5,5)\\
+\eta \sim & \mathcal{N}^+(0,1)\\
+\sigma_\textrm{noise} \sim & \mathcal{N}^+(0,1)
+\end{align}
 
 ```{r}
 basic_model <- cmdstan_model(stan_file = "stan/basic_model.stan")
@@ -113,9 +141,9 @@ basic_model <- cmdstan_model(stan_file = "stan/basic_model.stan")
 ```{r}
 #| output: false
 #| message: false
-data_list <- list(N = length(data_df$mjd), 
-                  x = data_df$mjd,
-                  y = data_df$f_peak,
+data_list <- list(N = length(x), 
+                  x = x,
+                  y = y,
                   x_star = x_star,
                   N_star = length(x_star))
 
@@ -124,68 +152,49 @@ basic_fit <- basic_model$sample(
   seed = 1,
   chains = 4,
   parallel_chains = 4,
-  refresh = 0
-)
+  iter_warmup = 1000,
+  iter_sampling = 1000,
+  refresh = 0)
 ```
+
+## MCMC Results
 
 ```{r}
 #| include: false
 basic_fit$cmdstan_diagnose()
 ```
 
-## MCMC Results
-
 ```{r}
 basic_fit$print(variables = c("eta", "ell", "sigma"), digits = 6)
 ```
 
-```{r}
-basic_draws_arr <- basic_fit$draws(format = "draws_array")
-mcmc_trace(basic_draws_arr, pars = c("eta", "ell", "sigma"), facet_args = list(nrow = 2))
-```
+## MCMC Plots
 
 ```{r}
-mcmc_dens(basic_draws_arr, pars = c("eta", "ell", "sigma"), facet_args = list(nrow = 2))
-```
-
-```{r}
-mcmc_pairs(basic_draws_arr, pars = c("eta", "ell", "sigma"), off_diag_fun = "hex")
+mcmc_plots(basic_fit, c("eta", "ell", "sigma"))
 ```
 
 ## Posterior Predictive Samples
 
 ```{r}
-basic_postpred_draws <- as_draws_rvars(basic_fit$draws("f_star"))
-
-ggplot() +
-  aes(x = x_star) +
-  geom_ribbon(aes(ymin = quantile(basic_postpred_draws$f_star, probs = 0.16)[1,],
-                  ymax = quantile(basic_postpred_draws$f_star, probs = 0.84)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_ribbon(aes(ymin = quantile(basic_postpred_draws$f_star, probs = 0.05)[1,],
-                  ymax = quantile(basic_postpred_draws$f_star, probs = 0.95)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_line(aes(y = median(basic_postpred_draws$f_star)), linewidth = 1, colour = "black") +
-  geom_linerange(aes(x = data_df$mjd, y = data_df$f_peak, 
-                     ymax = data_df$f_peak + data_df$f_peak_err, 
-                     ymin = data_df$f_peak - data_df$f_peak_err), colour = "red")  +
-  geom_point(aes(x = data_df$mjd, y = data_df$f_peak), size = 2, colour = "red") +
-  labs(x = "MJD", y = "Flux Density") +
-  theme_classic()
+plot_postpred(basic_fit, x, y, y_err, x_star)
 ```
 
 The fitted model has a very long lengthscale, comparable to the length of the observational window. The estimated observational noise has a standard deviation more than an order of magnitude of that in the original data. The combination of these parameters has lead to a very smooth fit that passes through the middle of the observed data points rather than through any datapoints themselves.
 
+## PSD
+
 ```{r}
 #| message: false
-plot_PSD(basic_postpred_draws)
+plot_PSD(basic_fit)
 ```
 
-# Observational Errors Model
+# SE Observational Errors Model
 
-- Zero constant mean function
-- Include data on error in observations of $y_i$
-- Heteroskedastic (Gaussian) noise
+- Zero constant mean function.
+- Squared exponential kernel function.
+- Heteroskedastic (Gaussian) noise.
+- Incorporate data on error in observations of each $y_i$.
 
 $$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
 
@@ -206,10 +215,10 @@ err_model <- cmdstan_model("stan/err_model.stan")
 ```{r}
 #| output: false
 #| message: false
-data_list <- list(N = length(data_df$mjd), 
-                  x = data_df$mjd,
-                  y = data_df$f_peak,
-                  y_stderr = data_df$f_peak_err,
+data_list <- list(N = length(x), 
+                  x = x,
+                  y = y,
+                  y_stderr = y_err,
                   x_star = x_star,
                   N_star = length(x_star))
 
@@ -218,6 +227,8 @@ err_fit <- err_model$sample(
   seed = 1,
   chains = 4,
   parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
   refresh = 0
 )
 ```
@@ -233,64 +244,44 @@ err_fit$cmdstan_diagnose()
 err_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
 ```
 
-```{r}
-err_draws_arr <- err_fit$draws(format = "draws_array")
-mcmc_trace(err_draws_arr, pars = c("eta", "ell"), facet_args = list(nrow = 2))
-```
+## MCMC Plots
 
 ```{r}
-mcmc_dens(err_draws_arr, pars = c("eta", "ell"), facet_args = list(nrow = 2))
-```
-
-```{r}
-mcmc_pairs(err_draws_arr, pars = c("eta", "ell"), off_diag_fun = "hex")
+mcmc_plots(err_fit, c("eta", "ell", "sigma[1]"))
 ```
 
 ```{r fig.height=9}
-mcmc_dens(err_draws_arr, regex_pars = "sigma", facet_args = list(nrow = 7))
+mcmc_dens(err_fit$draws(), regex_pars = "sigma", facet_args = list(nrow = 7))
 ```
 
 ## Posterior Predictive Samples
 
 ```{r}
-err_postpred_draws <- as_draws_rvars(err_fit$draws("f_star"))
-
-ggplot() +
-  aes(x = x_star) +
-  geom_ribbon(aes(ymin = quantile(err_postpred_draws$f_star, probs = 0.16)[1,],
-                  ymax = quantile(err_postpred_draws$f_star, probs = 0.84)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_ribbon(aes(ymin = quantile(err_postpred_draws$f_star, probs = 0.05)[1,],
-                  ymax = quantile(err_postpred_draws$f_star, probs = 0.95)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_line(aes(y = median(err_postpred_draws$f_star)), linewidth = 1, colour = "black") +
-  geom_linerange(aes(x = data_df$mjd, y = data_df$f_peak, 
-                     ymax = data_df$f_peak + data_df$f_peak_err, 
-                     ymin = data_df$f_peak - data_df$f_peak_err), colour = "red")  +
-  geom_point(aes(x = data_df$mjd, y = data_df$f_peak), size = 2, colour = "red") +
-  labs(x = "MJD", y = "Flux Density") +
-  theme_classic()
+plot_postpred(err_fit, x, y, y_err, x_star)
 ```
 
 By including the observed observational errors for setting priors on the Gaussian noise of each observation, the fitted median passes through each of the observed points.
 
+## PSD
+
 ```{r}
 #| message: false
-plot_PSD(err_postpred_draws)
+plot_PSD(err_fit)
 ```  
 
-# Constant (non-zero) Mean function
+# SE Non-zero flat mean function Model
 
-- Constant mean function
-- Prior on mean function value
-- Include data on error in observations of $y_i$
-- Heteroskedastic (Gaussian) noise
+- Constant mean function, learned from observations.
+- Weak prior on mean function intercept.
+- Squared exponential kernel function.
+- Heteroskedastic (Gaussian) noise.
+- Incorporate data on error in observations of each $y_i$.
 
 $$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
 
 $$f \sim \mathcal{GP}(C, k(x,  x'))$$
 
-$$C \sim \mathcal{U}[0,1]$$
+$$C \sim \mathcal{U}[-1,1]$$
 
 $$k(x,x') = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
 
@@ -307,10 +298,10 @@ flat_mean_model <- cmdstan_model("stan/flat_mean_model.stan")
 ```{r}
 #| message: false
 #| output: false
-data_list <- list(N = length(data_df$mjd), 
-                  x = data_df$mjd,
-                  y = data_df$f_peak,
-                  y_stderr = data_df$f_peak_err,
+data_list <- list(N = length(x), 
+                  x = x,
+                  y = y,
+                  y_stderr = y_err,
                   x_star = x_star,
                   N_star = length(x_star))
 
@@ -319,6 +310,7 @@ flat_mean_fit <- flat_mean_model$sample(
   seed = 1,
   chains = 4,
   parallel_chains = 4,
+  iter_warmup = 
   refresh = 0
 )
 ```
@@ -335,56 +327,31 @@ flat_mean_fit$print(variables = c("eta", "ell", "C", "sigma[1]"), digits = 6)
 ```
 
 ```{r}
-flat_mean_draws_arr <- flat_mean_fit$draws(format = "draws_array")
-mcmc_trace(flat_mean_draws_arr, pars = c("eta", "ell", "C"), facet_args = list(nrow = 2))
-```
-
-```{r}
-mcmc_dens(flat_mean_draws_arr, pars = c("eta", "ell", "C"), facet_args = list(nrow = 2))
-```
-
-```{r}
-mcmc_pairs(flat_mean_draws_arr, pars = c("eta", "ell", "C"), off_diag_fun = "hex")
+mcmc_plots(flat_mean_fit, variables = c("eta", "ell", "C"))
 ```
 
 ## Posterior Predictive Samples
 
 ```{r}
-flat_mean_postpred_draws <- as_draws_rvars(flat_mean_fit$draws("f_star"))
-
-ggplot() +
-  aes(x = x_star) +
-  geom_ribbon(aes(ymin = quantile(flat_mean_postpred_draws$f_star, probs = 0.16)[1,],
-                  ymax = quantile(flat_mean_postpred_draws$f_star, probs = 0.84)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_ribbon(aes(ymin = quantile(flat_mean_postpred_draws$f_star, probs = 0.05)[1,],
-                  ymax = quantile(flat_mean_postpred_draws$f_star, probs = 0.95)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_line(aes(y = median(flat_mean_postpred_draws$f_star)), linewidth = 1, colour = "black") +
-  geom_hline(aes(yintercept = mean(data_df$f_peak)), linetype = "dashed") +
-  geom_hline(aes(yintercept = mean(flat_mean_fit$draws("C"))), colour = "orange") +
-  geom_linerange(aes(x = data_df$mjd, y = data_df$f_peak, 
-                     ymax = data_df$f_peak + data_df$f_peak_err, 
-                     ymin = data_df$f_peak - data_df$f_peak_err), colour = "red")  +
-  geom_point(aes(x = data_df$mjd, y = data_df$f_peak), size = 2, colour = "red") +
-  labs(x = "MJD", y = "Flux Density") +
-  theme_classic()
+plot_postpred(flat_mean_fit, x, y, y_err, x_star) + 
+  geom_hline(aes(yintercept = mean(flat_mean_fit$draws("C"))), colour = "orange") 
 ```
 
 ```{r}
 #| message: false
-plot_PSD(flat_mean_postpred_draws)
+plot_PSD(flat_mean_fit)
 ```
 
-# Fixed constant (non-zero) Mean function
+# SE Fixed constant mean function Model
 
-- Constant mean function set at fixed value, e.g., mean of observations
-- Include data on error in observations of $y_i$
-- Heteroskedastic (Gaussian) noise
+- Constant mean function set at fixed value, e.g., mean of observations.
+- Squared exponential kernel function.
+- Heteroskedastic (Gaussian) noise.
+- Incorporate data on error in observations of each $y_i$.
 
 $$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
 
-$$f \sim \mathcal{GP}(C, k(x,  x'))$$
+$$f \sim \mathcal{GP}(C, k(x,  x')),\quad C \in \mathbb{R}$$
 
 $$k(x,x') = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
 
@@ -403,10 +370,10 @@ fixed_mean_model <- cmdstan_model("stan/fixed_mean_model.stan")
 ```{r}
 #| message: false
 #| output: false
-data_list <- list(N = length(data_df$mjd), 
-                  x = data_df$mjd,
-                  y = data_df$f_peak,
-                  y_stderr = data_df$f_peak_err,
+data_list <- list(N = length(x), 
+                  x = x,
+                  y = y,
+                  y_stderr = y_err,
                   x_star = x_star,
                   N_star = length(x_star),
                   const_mean_value = 0.2)
@@ -418,30 +385,20 @@ fixed_mean_fit <- fixed_mean_model$sample(
   parallel_chains = 4,
   refresh = 0
 )
-
-fixed_mean_postpred_draws <- as_draws_rvars(fixed_mean_fit$draws("f_star"))
 ```
 
 ```{r}
-ggplot() +
-  aes(x = x_star) +
-  geom_ribbon(aes(ymin = quantile(fixed_mean_postpred_draws$f_star, probs = 0.16)[1,],
-                  ymax = quantile(fixed_mean_postpred_draws$f_star, probs = 0.84)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_ribbon(aes(ymin = quantile(fixed_mean_postpred_draws$f_star, probs = 0.05)[1,],
-                  ymax = quantile(fixed_mean_postpred_draws$f_star, probs = 0.95)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_line(aes(y = median(fixed_mean_postpred_draws$f_star)), linewidth = 1, colour = "black") +
-  geom_hline(aes(yintercept = mean(data_df$f_peak)), linetype = "dashed") +
-  geom_hline(aes(yintercept = data_list$const_mean_value), colour = "orange") +
-  geom_point(aes(x = data_df$mjd, y = data_df$f_peak), size = 2, colour = "red") +
-  labs(x = "MJD", y = "Flux Density") +
-  theme_classic()
+fixed_mean_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
+```
+
+```{r}
+plot_postpred(fixed_mean_fit, x, y, y_err, x_star) + 
+  geom_hline(aes(yintercept = 0.2), colour = "orange") 
 ```
 
 ```{r}
 #| message: false
-plot_PSD(fixed_mean_postpred_draws)
+plot_PSD(fixed_mean_fit)
 ```
 
 ## Mean Function = 0.195
@@ -449,10 +406,10 @@ plot_PSD(fixed_mean_postpred_draws)
 ```{r}
 #| message: false
 #| output: false
-data_list <- list(N = length(data_df$mjd), 
-                  x = data_df$mjd,
-                  y = data_df$f_peak,
-                  y_stderr = data_df$f_peak_err,
+data_list <- list(N = length(x), 
+                  x = x,
+                  y = y,
+                  y_stderr = y_err,
                   x_star = x_star,
                   N_star = length(x_star),
                   const_mean_value = 0.195)
@@ -464,30 +421,20 @@ fixed_mean_fit <- fixed_mean_model$sample(
   parallel_chains = 4,
   refresh = 0
 )
-
-fixed_mean_postpred_draws <- as_draws_rvars(fixed_mean_fit$draws("f_star"))
 ```
 
 ```{r}
-ggplot() +
-  aes(x = x_star) +
-  geom_ribbon(aes(ymin = quantile(fixed_mean_postpred_draws$f_star, probs = 0.16)[1,],
-                  ymax = quantile(fixed_mean_postpred_draws$f_star, probs = 0.84)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_ribbon(aes(ymin = quantile(fixed_mean_postpred_draws$f_star, probs = 0.05)[1,],
-                  ymax = quantile(fixed_mean_postpred_draws$f_star, probs = 0.95)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_line(aes(y = median(fixed_mean_postpred_draws$f_star)), linewidth = 1, colour = "black") +
-  geom_hline(aes(yintercept = mean(data_df$f_peak)), linetype = "dashed") +
-  geom_hline(aes(yintercept = data_list$const_mean_value), colour = "orange") +
-  geom_point(aes(x = data_df$mjd, y = data_df$f_peak), size = 2, colour = "red") +
-  labs(x = "MJD", y = "Flux Density") +
-  theme_classic()
+fixed_mean_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
+```
+
+```{r}
+plot_postpred(fixed_mean_fit, x, y, y_err, x_star) + 
+  geom_hline(aes(yintercept = 0.195), colour = "orange") 
 ```
 
 ```{r}
 #| message: false
-plot_PSD(fixed_mean_postpred_draws)
+plot_PSD(fixed_mean_fit)
 ```
 
 ## Mean Function = 0.18
@@ -495,10 +442,10 @@ plot_PSD(fixed_mean_postpred_draws)
 ```{r}
 #| message: false
 #| output: false
-data_list <- list(N = length(data_df$mjd), 
-                  x = data_df$mjd,
-                  y = data_df$f_peak,
-                  y_stderr = data_df$f_peak_err,
+data_list <- list(N = length(x), 
+                  x = x,
+                  y = y,
+                  y_stderr = y_err,
                   x_star = x_star,
                   N_star = length(x_star),
                   const_mean_value = 0.18)
@@ -510,33 +457,27 @@ fixed_mean_fit <- fixed_mean_model$sample(
   parallel_chains = 4,
   refresh = 0
 )
-
-fixed_mean_postpred_draws <- as_draws_rvars(fixed_mean_fit$draws("f_star"))
 ```
 
 ```{r}
-ggplot() +
-  aes(x = x_star) +
-  geom_ribbon(aes(ymin = quantile(fixed_mean_postpred_draws$f_star, probs = 0.16)[1,],
-                  ymax = quantile(fixed_mean_postpred_draws$f_star, probs = 0.84)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_ribbon(aes(ymin = quantile(fixed_mean_postpred_draws$f_star, probs = 0.05)[1,],
-                  ymax = quantile(fixed_mean_postpred_draws$f_star, probs = 0.95)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_line(aes(y = median(fixed_mean_postpred_draws$f_star)), linewidth = 1, colour = "black") +
-  geom_hline(aes(yintercept = mean(data_df$f_peak)), linetype = "dashed") +
-  geom_hline(aes(yintercept = data_list$const_mean_value), colour = "orange") +
-  geom_point(aes(x = data_df$mjd, y = data_df$f_peak), size = 2, colour = "red") +
-  labs(x = "MJD", y = "Flux Density") +
-  theme_classic()
+fixed_mean_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
+```
+
+```{r}
+plot_postpred(fixed_mean_fit, x, y, y_err, x_star) + 
+  geom_hline(aes(yintercept = 0.18), colour = "orange") 
 ```
 
 ```{r}
 #| message: false
-plot_PSD(fixed_mean_postpred_draws)
+plot_PSD(fixed_mean_fit)
 ```
 
-# Matern 3/2 kernel, zero mean
+
+# Matern 3/2 kernel
+
+- Matern 3/2 covariance kernel
+- Zero constant mean function
 
 $$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
 
@@ -625,6 +566,10 @@ plot_PSD(m32_postpred_draws)
 ```
 
 # SE + Matern 3/2 additive kernel
+
+- Sum of squared exponential and Matern 3/2 kernels
+- single output scale (marginal variance) hyperparameter
+- zero constant mean function
 
 $$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
 
@@ -732,7 +677,9 @@ SExM32_fit <- SExM32_model$sample(
   seed = 2,
   chains = 4,
   parallel_chains = 4,
-  refresh = 0
+  refresh = 0,
+  iter_warmup = 2000,
+  iter_sampling = 2000
 )
 ```
 
@@ -807,7 +754,7 @@ $$\ell_\mathrm{M} \sim \mathrm{InvGamma}(5,5)$$
 
 $$\eta \sim \mathcal{N}^+(0,1)$$
 
-$$T \sim U(\textrm{min_gap}(\boldsymbol{x}), \textrm{range}(\boldsymbol{x}))$$
+$$T \sim \mathcal{U}[\textrm{minimum gap in x}, \textrm{range of x}]$$
 
 $$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}(\boldsymbol{y})))$$
 
@@ -832,7 +779,10 @@ SE_M32_P_fit <- SE_M32_P_model$sample(
   data = data_list,
   chains = 4,
   parallel_chains = 4,
-  refresh = 0
+  refresh = 0,
+  seed = 2, 
+  iter_warmup = 2000,
+  iter_sampling = 2000
 )
 ```
 
