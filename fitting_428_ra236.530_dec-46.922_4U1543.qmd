@@ -538,10 +538,116 @@ plot_PSD(fixed_mean_postpred_draws)
 
 # Matern 3/2 kernel, zero mean
 
+$$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
+
+$$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
+
+$$k(x,x') = \eta^2 \left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell}\right\}$$
+
+$$\ell \sim \mathrm{InvGamma}(5,5)$$
+
+$$\eta \sim \mathcal{N}^+(0,1)$$
+
+$$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}(\boldsymbol{y})))$$
+
+```{r}
+matern32_model <- cmdstan_model(stan_file = "stan/matern32_model.stan")
+```
+
+```{r}
+#| output: false
+#| message: false
+data_list <- list(N = length(data_df$mjd), 
+                  x = data_df$mjd,
+                  y = data_df$f_peak,
+                  y_stderr = data_df$f_peak_err,
+                  x_star = x_star,
+                  N_star = length(x_star))
+
+m32_fit <- matern32_model$sample(
+  data = data_list,
+  seed = 1,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 0
+)
+```
+
+```{r}
+#| include: false
+m32_fit$cmdstan_diagnose()
+```
+
+## MCMC Results
+
+```{r}
+m32_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
+```
+
+```{r}
+m32_draws_arr <- m32_fit$draws(format = "draws_array")
+mcmc_trace(m32_draws_arr, pars = c("eta", "ell", "sigma[1]"), facet_args = list(nrow = 2))
+```
+
+```{r}
+mcmc_dens(m32_draws_arr, pars = c("eta", "ell", "sigma[1]"), facet_args = list(nrow = 2))
+```
+
+```{r}
+mcmc_pairs(m32_draws_arr, pars = c("eta", "ell", "sigma[1]"), off_diag_fun = "hex")
+```
+
+## Posterior Predictive Samples
+
+```{r}
+m32_postpred_draws <- as_draws_rvars(m32_fit$draws("f_star"))
+
+ggplot() +
+  aes(x = x_star) +
+  geom_ribbon(aes(ymin = quantile(m32_postpred_draws$f_star, probs = 0.16)[1,],
+                  ymax = quantile(m32_postpred_draws$f_star, probs = 0.84)[1,]),
+              fill = "blue", alpha = 0.3) +
+  geom_ribbon(aes(ymin = quantile(m32_postpred_draws$f_star, probs = 0.05)[1,],
+                  ymax = quantile(m32_postpred_draws$f_star, probs = 0.95)[1,]),
+              fill = "blue", alpha = 0.3) +
+  geom_line(aes(y = median(m32_postpred_draws$f_star)), linewidth = 1, colour = "black") +
+  geom_linerange(aes(x = data_df$mjd, y = data_df$f_peak, 
+                     ymax = data_df$f_peak + data_df$f_peak_err, 
+                     ymin = data_df$f_peak - data_df$f_peak_err), colour = "red")  +
+  geom_point(aes(x = data_df$mjd, y = data_df$f_peak), size = 2, colour = "red") +
+  labs(x = "MJD", y = "Flux Density") +
+  theme_classic()
+```
+
+```{r}
+#| message: false
+plot_PSD(m32_postpred_draws)
+```
+
 # SE + Matern 3/2 additive kernel
+
+$$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
+
+$$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
+
+$$k(x,x') = \eta^2 \left[ \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell_\mathrm{SE}^2}\right\} + \left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right\} \right]$$
+
+$$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(5,5)$$
+
+$$\ell_\mathrm{M} \sim \mathrm{InvGamma}(5,5)$$
+
+$$\eta \sim \mathcal{N}^+(0,1)$$
+
+$$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}(\boldsymbol{y})))$$
+
+
+
+
+
 
 # SE x Matern 3/2 multiplicative kernel
 
 # SE GP + Matern 3/2 GP
 
 # SE + Matern 3/2 + QP kernel
+
