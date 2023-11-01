@@ -4,7 +4,8 @@ functions {
                      vector y,
                      array[] real x,
                      real eta,
-                     real ell,
+                     real ell_SE,
+                     real ell_M,
                      vector sigma,
                      real jitter) {
     int N = rows(y);
@@ -19,7 +20,7 @@ functions {
       vector[N_star] fstar_mu;
       matrix[N_star, N_star] fstar_cov;
 
-      K = gp_matern32_cov(x, eta, ell);
+      K = eta * ( gp_exp_quad_cov(x, 1, ell_SE) + gp_matern32_cov(x, 1, ell_M) );
       for (n in 1:N)
         K[n, n] = K[n,n] + square(sigma[n]);
 
@@ -27,11 +28,11 @@ functions {
       alpha = mdivide_left_tri_low(L, y);
       alpha = mdivide_right_tri_low(alpha', L)';
 
-      k_x_xstar = gp_matern32_cov(x, x_star, eta, ell);
+      k_x_xstar = eta * ( gp_exp_quad_cov(x, x_star, 1, ell_SE) + gp_matern32_cov(x, x_star, 1, ell_M) );
       fstar_mu = k_x_xstar' * alpha;
 
       v = mdivide_left_tri_low(L, k_x_xstar);
-      fstar_cov = gp_matern32_cov(x_star, eta, ell) - v' * v;
+      fstar_cov = eta * ( gp_exp_quad_cov(x_star, 1, ell_SE) + gp_matern32_cov(x_star, 1, ell_M) ) - v' * v;
 
       f_star = multi_normal_rng(fstar_mu, add_diag(fstar_cov, rep_vector(jitter, N_star)));
     }
@@ -51,19 +52,21 @@ transformed data {
 }
 parameters {
   real<lower=0> ell_SE;
+  real<lower=0> ell_M;
   real<lower=0> eta;
   vector<lower=0>[N] sigma; // heteroskedastic
 }
 model {
-  matrix[N, N] K = gp_matern32_cov(x, eta, ell);
+  matrix[N, N] K = eta * ( gp_exp_quad_cov(x, 1, ell_SE) + gp_matern32_cov(x, 1, ell_M) );
   matrix[N, N] L = cholesky_decompose(add_diag(K, sigma^2));
 
-  ell ~ inv_gamma(5, 5);
+  ell_SE ~ inv_gamma(5, 5);
+  ell_M ~ inv_gamma(5, 5);
   eta ~ std_normal();
   sigma ~ normal(y_stderr, sd(y_stderr)); // use observed error estimates
 
   y ~ multi_normal_cholesky(mu, L);
 }
 generated quantities {
-  vector[N_star] f_star = gp_pred_rng(x_star, y, x, eta, ell, sigma, 1e-9);
+  vector[N_star] f_star = gp_pred_rng(x_star, y, x, eta, ell_SE, ell_M, sigma, 1e-9);
 }
