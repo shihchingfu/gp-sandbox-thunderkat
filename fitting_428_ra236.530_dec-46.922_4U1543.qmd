@@ -33,7 +33,7 @@ mcmc_plots <- function(fit, variables) {
   mcmc_pairs(draws_arr, pars = variables, off_diag_fun = "hex") |> print()
 }
 
-plot_postpred <- function(fit, x, y, y_err, x_star) {
+plot_postpred <- function(fit, x, y, y_err, x_star, title) {
   postpred_draws <- as_draws_rvars(fit$draws("f_star"))
   
   ggplot() +
@@ -48,11 +48,11 @@ plot_postpred <- function(fit, x, y, y_err, x_star) {
     geom_linerange(aes(x = x, y = y, 
                        ymax = y + y_err, ymin = y - y_err), colour = "red")  +
     geom_point(aes(x = x, y = y), size = 2, colour = "red") +
-    labs(x = "MJD", y = "Flux (Jy)") +
+    labs(x = "MJD", y = "Flux (Jy)", title = title) +
     theme_classic()
 }
 
-plot_PSD <- function(fit, nsamples = 200) {
+plot_PSD <- function(fit, nsamples = 200, title) {
   draws_subset <- 
     subset_draws(fit$draws(), 
                  variable = "f_star", 
@@ -79,7 +79,7 @@ plot_PSD <- function(fit, nsamples = 200) {
     geom_line() +
     scale_x_log10() +
     scale_y_log10() +
-    labs(x = "Frequency", y = "Spectral Density") +
+    labs(x = "Frequency", y = "Spectral Density", title = title) +
     theme_bw()
 }
 ```
@@ -634,6 +634,83 @@ plot_postpred(SE_M32_fit, x, y, y_err, x_star)
 plot_PSD(SE_M32_fit)
 ```
 
+# SE + Matern 3/2 (2 output scales) additive kernel
+
+- Sum of squared exponential and Matern 3/2 kernels
+- One output scale (marginal variance) hyperparameter for each kernel
+- zero constant mean function
+
+$$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
+
+$$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
+
+$$k(x,x') = \eta_\textrm{SE}^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell_\mathrm{SE}^2}\right\} + \eta^2_\textrm{M}\left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right\}$$
+
+$$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(5,5)$$
+
+$$\ell_\mathrm{M} \sim \mathrm{InvGamma}(5,5)$$
+
+$$\eta_\textrm{SE} \sim \mathcal{N}^+(0,1)$$
+
+$$\eta_\textrm{M} \sim \mathcal{N}^+(0,1)$$
+
+$$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}(\boldsymbol{y})))$$
+
+
+```{r}
+SE_M32_2_model <- cmdstan_model(stan_file = "stan/SE_M32_2_model.stan")
+```
+
+```{r}
+#| output: false
+#| message: false
+data_list <- list(N = length(data_df$mjd), 
+                  x = data_df$mjd,
+                  y = data_df$f_peak,
+                  y_stderr = data_df$f_peak_err,
+                  x_star = x_star,
+                  N_star = length(x_star))
+
+SE_M32_2_fit <- SE_M32_2_model$sample(
+  data = data_list,
+  seed = 1,
+  chains = 4,
+  parallel_chains = 4,
+  iter_warmup = 2000,
+  iter_sampling = 2000,
+  refresh = 1000
+)
+```
+
+```{r}
+#| include: false
+SE_M32_2_fit$cmdstan_diagnose()
+```
+
+## MCMC Results
+
+```{r}
+SE_M32_2_fit$print(variables = c("eta_SE", "eta_M", "ell_SE", "ell_M", "sigma[1]"), digits = 5)
+```
+
+## MCMC Plots
+
+```{r}
+mcmc_plots(SE_M32_2_fit, c("eta_SE", "eta_M", "ell_SE", "ell_M"))
+```
+
+## Posterior Predictive Samples
+
+```{r}
+plot_postpred(SE_M32_2_fit, x, y, y_err, x_star, "SE + Matern 3/2 (2 output scales)")
+```
+
+## PSD
+
+```{r}
+#| message: false
+plot_PSD(SE_M32_2_fit, title = "SE + Matern 3/2 (2 output scales)")
+```
 
 # SE x Matern 3/2 multiplicative kernel
 
@@ -787,4 +864,5 @@ plot_postpred(SE_M32_P_fit, x, y, y_err, x_star)
 #| message: false
 plot_PSD(SE_M32_P_fit)
 ```
+
 
