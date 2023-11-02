@@ -48,7 +48,7 @@ plot_postpred <- function(fit, x, y, y_err, x_star) {
     geom_linerange(aes(x = x, y = y, 
                        ymax = y + y_err, ymin = y - y_err), colour = "red")  +
     geom_point(aes(x = x, y = y), size = 2, colour = "red") +
-    labs(x = "MJD", y = "Flux Density") +
+    labs(x = "MJD", y = "Flux (Jy)") +
     theme_classic()
 }
 
@@ -102,7 +102,9 @@ data_df |>
       ymax = f_peak + f_peak_err, ymin = f_peak - f_peak_err) +
   geom_point(colour = "red") +
   geom_linerange(colour = "red") +
-  labs(title = csv_fname, x = "MJD", y = "Flux Density (Jy)") +
+  geom_rug(sides = "b", outside = TRUE, colour = "red") +
+  coord_cartesian(clip = "off") +
+  labs(title = csv_fname, x = "MJD", y = "Flux (Jy)") +
   theme_classic()
 ```
 
@@ -111,12 +113,13 @@ data_df |>
 summary(data_df[c("f_peak", "f_peak_err", "mjd")])
 ```
 
-- The light curve has $N =$ `r NROW(data_df)` observations over a range of `r diff(range(x))` days.
-- The mean flux density is $\bar{y} =$ `r mean(y)` Jy.
-- The mean standard error is `r mean(y_err)` Jy.
-- The observational noise is faint relative to the brightness of the observations. 
+- The light curve has $N =$ `r NROW(data_df)` observations over a range of `r round(diff(range(x)), 2)` days.
 - Observations are evenly spread over the time range.
-- There are hints of correlated noise components in the light curve.
+- The shortest gap between observations is `r round(min(diff(x)), 2)` days.
+- The longest gap between observations is `r round(max(diff(x)), 2)` days.
+- The mean flux density is $\bar{y} =$ `r format(signif(mean(y),3), scientific = F)` Jy.
+- The mean standard error in the observations is `r format(signif(mean(y_err),3), scientific = F)` Jy.
+- The observational noise is very small relative to the brightness of the observations. 
 
 # SE Basic Model
 
@@ -125,14 +128,17 @@ summary(data_df[c("f_peak", "f_peak_err", "mjd")])
 - Homoskedastic noise.
 - Wide prior on observational noise, uninformed by observational noise estimates.
 
-\begin{align}
-y & \sim \mathcal{N}(f(x), \sigma_\textrm{noise}^2)\\
-f & \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))\\
-k(x,x') & = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}\\
-\ell & \sim  \mathrm{InvGamma}(5,5)\\
-\eta & \sim \mathcal{N}^+(0,1)\\
-\sigma_\textrm{noise} & \sim \mathcal{N}^+(0,1)
-\end{align}
+$$y \sim \mathcal{N}(f(x), \sigma_\textrm{noise}^2)$$
+
+$$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
+
+$$k(x,x') = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
+
+$$\ell \sim  \mathrm{InvGamma}(5,5)$$
+
+$$\eta \sim \mathcal{N}^+(0,1)$$
+
+$$\sigma_\textrm{noise} \sim \mathcal{N}^+(0,1)$$
 
 ```{r}
 basic_model <- cmdstan_model(stan_file = "stan/basic_model.stan")
