@@ -126,12 +126,12 @@ summary(data_df[c("f_peak", "f_peak_err", "mjd")])
 - Wide prior on observational noise, uninformed by observational noise estimates.
 
 \begin{align}
-y \sim & \mathcal{N}(f(x), \sigma_\textrm{noise}^2)\\
-f \sim & \mathcal{GP}(\boldsymbol{0}, k(x,  x'))\\
-k(x,x') = & \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}\\
-\ell \sim & \mathrm{InvGamma}(5,5)\\
-\eta \sim & \mathcal{N}^+(0,1)\\
-\sigma_\textrm{noise} \sim & \mathcal{N}^+(0,1)
+y & \sim \mathcal{N}(f(x), \sigma_\textrm{noise}^2)\\
+f & \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))\\
+k(x,x') & = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}\\
+\ell & \sim  \mathrm{InvGamma}(5,5)\\
+\eta & \sim \mathcal{N}^+(0,1)\\
+\sigma_\textrm{noise} & \sim \mathcal{N}^+(0,1)
 \end{align}
 
 ```{r}
@@ -310,7 +310,8 @@ flat_mean_fit <- flat_mean_model$sample(
   seed = 1,
   chains = 4,
   parallel_chains = 4,
-  iter_warmup = 
+  iter_warmup = 1000,
+  iter_sampling = 1000,
   refresh = 0
 )
 ```
@@ -326,6 +327,8 @@ flat_mean_fit$cmdstan_diagnose()
 flat_mean_fit$print(variables = c("eta", "ell", "C", "sigma[1]"), digits = 6)
 ```
 
+## MCMC Plots
+
 ```{r}
 mcmc_plots(flat_mean_fit, variables = c("eta", "ell", "C"))
 ```
@@ -336,6 +339,8 @@ mcmc_plots(flat_mean_fit, variables = c("eta", "ell", "C"))
 plot_postpred(flat_mean_fit, x, y, y_err, x_star) + 
   geom_hline(aes(yintercept = mean(flat_mean_fit$draws("C"))), colour = "orange") 
 ```
+
+## PSD
 
 ```{r}
 #| message: false
@@ -383,6 +388,8 @@ fixed_mean_fit <- fixed_mean_model$sample(
   seed = 1,
   chains = 4,
   parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
   refresh = 0
 )
 ```
@@ -419,6 +426,8 @@ fixed_mean_fit <- fixed_mean_model$sample(
   seed = 1,
   chains = 4,
   parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
   refresh = 0
 )
 ```
@@ -455,6 +464,8 @@ fixed_mean_fit <- fixed_mean_model$sample(
   seed = 1,
   chains = 4,
   parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
   refresh = 0
 )
 ```
@@ -510,6 +521,8 @@ m32_fit <- matern32_model$sample(
   seed = 1,
   chains = 4,
   parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
   refresh = 0
 )
 ```
@@ -525,44 +538,23 @@ m32_fit$cmdstan_diagnose()
 m32_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
 ```
 
-```{r}
-m32_draws_arr <- m32_fit$draws(format = "draws_array")
-mcmc_trace(m32_draws_arr, pars = c("eta", "ell", "sigma[1]"), facet_args = list(nrow = 2))
-```
+## MCMC Plots
 
 ```{r}
-mcmc_dens(m32_draws_arr, pars = c("eta", "ell", "sigma[1]"), facet_args = list(nrow = 2))
-```
-
-```{r}
-mcmc_pairs(m32_draws_arr, pars = c("eta", "ell", "sigma[1]"), off_diag_fun = "hex")
+mcmc_plots(m32_fit, c("eta", "ell", "sigma[1]"))
 ```
 
 ## Posterior Predictive Samples
 
 ```{r}
-m32_postpred_draws <- as_draws_rvars(m32_fit$draws("f_star"))
-
-ggplot() +
-  aes(x = x_star) +
-  geom_ribbon(aes(ymin = quantile(m32_postpred_draws$f_star, probs = 0.16)[1,],
-                  ymax = quantile(m32_postpred_draws$f_star, probs = 0.84)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_ribbon(aes(ymin = quantile(m32_postpred_draws$f_star, probs = 0.05)[1,],
-                  ymax = quantile(m32_postpred_draws$f_star, probs = 0.95)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_line(aes(y = median(m32_postpred_draws$f_star)), linewidth = 1, colour = "black") +
-  geom_linerange(aes(x = data_df$mjd, y = data_df$f_peak, 
-                     ymax = data_df$f_peak + data_df$f_peak_err, 
-                     ymin = data_df$f_peak - data_df$f_peak_err), colour = "red")  +
-  geom_point(aes(x = data_df$mjd, y = data_df$f_peak), size = 2, colour = "red") +
-  labs(x = "MJD", y = "Flux Density") +
-  theme_classic()
+plot_postpred(m32_fit, x, y, y_err, x_star)
 ```
+
+## PSD
 
 ```{r}
 #| message: false
-plot_PSD(m32_postpred_draws)
+plot_PSD(m32_fit)
 ```
 
 # SE + Matern 3/2 additive kernel
@@ -605,39 +597,35 @@ SE_M32_fit <- SE_M32_model$sample(
   seed = 1,
   chains = 4,
   parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
   refresh = 0
 )
 ```
+
+## MCMC Results
 
 ```{r}
 SE_M32_fit$print(variables = c("eta", "ell_SE", "ell_M", "sigma[1]"), digits = 6)
 ```
 
+## MCMC Plots
+
+```{r}
+mcmc_plots(SE_M32_fit, c("eta", "ell_SE", "ell_M"))
+```
+
 ## Posterior Predictive Samples
 
 ```{r}
-SE_M32_postpred_draws <- as_draws_rvars(SE_M32_fit$draws("f_star"))
-
-ggplot() +
-  aes(x = x_star) +
-  geom_ribbon(aes(ymin = quantile(SE_M32_postpred_draws$f_star, probs = 0.16)[1,],
-                  ymax = quantile(SE_M32_postpred_draws$f_star, probs = 0.84)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_ribbon(aes(ymin = quantile(SE_M32_postpred_draws$f_star, probs = 0.05)[1,],
-                  ymax = quantile(SE_M32_postpred_draws$f_star, probs = 0.95)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_line(aes(y = median(SE_M32_postpred_draws$f_star)), linewidth = 1, colour = "black") +
-  geom_linerange(aes(x = data_df$mjd, y = data_df$f_peak, 
-                     ymax = data_df$f_peak + data_df$f_peak_err, 
-                     ymin = data_df$f_peak - data_df$f_peak_err), colour = "red")  +
-  geom_point(aes(x = data_df$mjd, y = data_df$f_peak), size = 2, colour = "red") +
-  labs(x = "MJD", y = "Flux Density") +
-  theme_classic()
+plot_postpred(SE_M32_fit, x, y, y_err, x_star)
 ```
+
+## PSD
 
 ```{r}
 #| message: false
-plot_PSD(SE_M32_postpred_draws)
+plot_PSD(SE_M32_fit)
 ```
 
 
@@ -677,9 +665,9 @@ SExM32_fit <- SExM32_model$sample(
   seed = 2,
   chains = 4,
   parallel_chains = 4,
-  refresh = 0,
   iter_warmup = 2000,
-  iter_sampling = 2000
+  iter_sampling = 2000,
+  refresh = 0
 )
 ```
 
@@ -694,48 +682,27 @@ SExM32_fit$cmdstan_diagnose()
 SExM32_fit$print(variables = c("eta", "ell_SE", "ell_M", "sigma[1]", "f_star[1]"), digits = 6)
 ```
 
-```{r}
-SExM32_draws_arr <- SExM32_fit$draws(format = "draws_array")
-mcmc_trace(SExM32_draws_arr, pars = c("eta", "ell_SE", "ell_M"), facet_args = list(nrow = 2))
-```
+## MCMC Plots
 
 ```{r}
-mcmc_dens(SExM32_draws_arr, pars = c("eta", "ell_SE", "ell_M"), facet_args = list(nrow = 2))
-```
-
-```{r}
-mcmc_pairs(SExM32_draws_arr, pars = c("eta", "ell_SE", "ell_M"), off_diag_fun = "hex")
+mcmc_plots(SExM32_fit, c("eta", "ell_SE", "ell_M"))
 ```
 
 ```{r fig.height=9}
-mcmc_dens(SExM32_draws_arr, regex_pars = "sigma", facet_args = list(nrow = 7))
+mcmc_dens(SExM32_fit$draws(), regex_pars = "sigma", facet_args = list(nrow = 7))
 ```
 
 ## Posterior Predictive Samples
 
 ```{r}
-SExM32_postpred_draws <- as_draws_rvars(SExM32_fit$draws("f_star"))
-
-ggplot() +
-  aes(x = x_star) +
-  geom_ribbon(aes(ymin = quantile(SExM32_postpred_draws$f_star, probs = 0.16)[1,],
-                  ymax = quantile(SExM32_postpred_draws$f_star, probs = 0.84)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_ribbon(aes(ymin = quantile(SExM32_postpred_draws$f_star, probs = 0.05)[1,],
-                  ymax = quantile(SExM32_postpred_draws$f_star, probs = 0.95)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_line(aes(y = median(SExM32_postpred_draws$f_star)), linewidth = 1, colour = "black") +
-  geom_linerange(aes(x = data_df$mjd, y = data_df$f_peak, 
-                     ymax = data_df$f_peak + data_df$f_peak_err, 
-                     ymin = data_df$f_peak - data_df$f_peak_err), colour = "red")  +
-  geom_point(aes(x = data_df$mjd, y = data_df$f_peak), size = 2, colour = "red") +
-  labs(x = "MJD", y = "Flux Density") +
-  theme_classic()
+plot_postpred(SExM32_fit, x, y, y_err, x_star)
 ```
+
+## PSD
 
 ```{r}
 #| message: false
-plot_PSD(SExM32_postpred_draws)
+plot_PSD(SExM32_fit)
 ```
 
 # Matern 3/2 + QP kernel
@@ -777,60 +744,41 @@ data_list <- list(N = length(data_df$mjd),
 
 SE_M32_P_fit <- SE_M32_P_model$sample(
   data = data_list,
+  seed = 2,
   chains = 4,
   parallel_chains = 4,
-  refresh = 0,
-  seed = 2, 
   iter_warmup = 2000,
-  iter_sampling = 2000
+  iter_sampling = 2000,
+  refresh = 0
 )
 ```
+
+## MCMC Results
 
 ```{r}
 SE_M32_P_fit$print(variables = c("eta", "ell_SE", "ell_M", "ell_P", "T"), digits = 4)
 ```
 
-```{r}
-SE_M32_P_draws_arr <- SE_M32_P_fit$draws(format = "draws_array")
-mcmc_trace(SE_M32_P_draws_arr, pars = c("eta", "ell_SE", "ell_M", "ell_P", "T"), facet_args = list(nrow = 2))
-```
+## MCMC Plots
 
 ```{r}
-mcmc_dens(SE_M32_P_draws_arr, pars = c("eta", "ell_SE", "ell_M", "ell_P", "T"), facet_args = list(nrow = 2))
-```
-
-```{r}
-mcmc_pairs(SE_M32_P_draws_arr, pars = c("eta", "ell_SE", "ell_M", "ell_P", "T"), off_diag_fun = "hex")
+mcmc_plots(SE_M32_P_fit, c("eta", "ell_SE", "ell_M", "ell_P", "T"))
 ```
 
 ```{r fig.height=9}
-mcmc_dens(SE_M32_P_draws_arr, regex_pars = "sigma", facet_args = list(nrow = 7))
+mcmc_dens(SE_M32_P_fit$draws(), regex_pars = "sigma", facet_args = list(nrow = 7))
 ```
 
 ## Posterior Predictive Samples
 
 ```{r}
-SE_M32_P_postpred_draws <- as_draws_rvars(SE_M32_P_fit$draws("f_star"))
-
-ggplot() +
-  aes(x = x_star) +
-  geom_ribbon(aes(ymin = quantile(SE_M32_P_postpred_draws$f_star, probs = 0.16)[1,],
-                  ymax = quantile(SE_M32_P_postpred_draws$f_star, probs = 0.84)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_ribbon(aes(ymin = quantile(SE_M32_P_postpred_draws$f_star, probs = 0.05)[1,],
-                  ymax = quantile(SE_M32_P_postpred_draws$f_star, probs = 0.95)[1,]),
-              fill = "blue", alpha = 0.3) +
-  geom_line(aes(y = median(SE_M32_P_postpred_draws$f_star)), linewidth = 1, colour = "black") +
-  geom_linerange(aes(x = data_df$mjd, y = data_df$f_peak, 
-                     ymax = data_df$f_peak + data_df$f_peak_err, 
-                     ymin = data_df$f_peak - data_df$f_peak_err), colour = "red")  +
-  geom_point(aes(x = data_df$mjd, y = data_df$f_peak), size = 2, colour = "red") +
-  labs(x = "MJD", y = "Flux Density") +
-  theme_classic()
+plot_postpred(SE_M32_P_fit, x, y, y_err, x_star)
 ```
+
+## PSD
 
 ```{r}
 #| message: false
-plot_PSD(SE_M32_P_postpred_draws)
+plot_PSD(SE_M32_P_fit)
 ```
 
