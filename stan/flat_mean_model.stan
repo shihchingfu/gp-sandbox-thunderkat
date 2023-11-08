@@ -20,7 +20,7 @@ functions {
       matrix[N_star, N_star] fstar_cov;
       vector[N_star] mu_star;
 
-      K = gp_exp_quad_cov(x, eta, ell);
+      K = eta*gp_exp_quad_cov(x, 1.0, ell);
       for (n in 1:N)
         K[n, n] = K[n,n] + square(sigma[n]);
 
@@ -28,7 +28,7 @@ functions {
       alpha = mdivide_left_tri_low(L, y - mu);
       alpha = mdivide_right_tri_low(alpha', L)';
 
-      k_x_xstar = gp_exp_quad_cov(x, x_star, eta, ell);
+      k_x_xstar = eta*gp_exp_quad_cov(x, x_star, 1.0, ell);
 
       mu_star = rep_vector(mu, N_star);
 
@@ -36,7 +36,7 @@ functions {
 
       v = mdivide_left_tri_low(L, k_x_xstar);
 
-      fstar_cov = gp_exp_quad_cov(x_star, eta, ell) - v' * v;
+      fstar_cov = eta*gp_exp_quad_cov(x_star, 1.0, ell) - v' * v;
 
       f_star = multi_normal_rng(fstar_mu, add_diag(fstar_cov, rep_vector(jitter, N_star)));
     }
@@ -58,7 +58,7 @@ parameters {
   real <lower=-1, upper=1> C; // Uniform prior on flat mean function
 }
 model {
-  matrix[N, N] K = gp_exp_quad_cov(x, eta, ell);
+  matrix[N, N] K = eta*gp_exp_quad_cov(x, 1.0, ell);
   matrix[N, N] L = cholesky_decompose(add_diag(K, sigma^2));
 
   ell ~ inv_gamma(5, 5);

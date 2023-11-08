@@ -18,16 +18,16 @@ functions {
       vector[N2] f2_mu;
       matrix[N2, N2] cov_f2;
       matrix[N1, N1] K;
-      K = gp_exp_quad_cov(x1, eta, ell);
+      K = eta * gp_exp_quad_cov(x1, 1.0, ell);
       for (n in 1:N1)
         K[n, n] = K[n,n] + square(sigma[n]);
       L_K = cholesky_decompose(K);
       K_div_y1 = mdivide_left_tri_low(L_K, y1);
       K_div_y1 = mdivide_right_tri_low(K_div_y1', L_K)';
-      k_x1_x2 = gp_exp_quad_cov(x1, x2, eta, ell);
+      k_x1_x2 = eta * gp_exp_quad_cov(x1, x2, 1.0, ell);
       f2_mu = (k_x1_x2' * K_div_y1);
       v_pred = mdivide_left_tri_low(L_K, k_x1_x2);
-      cov_f2 = gp_exp_quad_cov(x2, eta, ell) - v_pred' * v_pred;
+      cov_f2 = eta * gp_exp_quad_cov(x2, 1.0, ell) - v_pred' * v_pred;
 
       f2 = multi_normal_rng(f2_mu, add_diag(cov_f2, rep_vector(jitter, N2)));
     }
@@ -51,7 +51,7 @@ parameters {
   vector<lower=0>[N] sigma; // heteroskedastic
 }
 model {
-  matrix[N, N] K = gp_exp_quad_cov(x, eta, ell);
+  matrix[N, N] K = eta * gp_exp_quad_cov(x, 1.0, ell);
   matrix[N, N] L = cholesky_decompose(add_diag(K, sigma^2));
 
   ell ~ inv_gamma(5, 5);

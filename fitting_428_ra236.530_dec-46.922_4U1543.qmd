@@ -22,6 +22,7 @@ library(here)
 library(cmdstanr)
 library(posterior)
 library(bayesplot)
+library(astsa)
 
 color_scheme_set("brightblue")
 register_knitr_engine(override = FALSE)
@@ -33,7 +34,7 @@ mcmc_plots <- function(fit, variables) {
   mcmc_pairs(draws_arr, pars = variables, off_diag_fun = "hex") |> print()
 }
 
-plot_postpred <- function(fit, x, y, y_err, x_star, title) {
+plot_postpred <- function(fit, x, y, y_err, x_star, title = "") {
   postpred_draws <- as_draws_rvars(fit$draws("f_star"))
   
   ggplot() +
@@ -52,7 +53,7 @@ plot_postpred <- function(fit, x, y, y_err, x_star, title) {
     theme_classic()
 }
 
-plot_PSD <- function(fit, nsamples = 200, title) {
+plot_PSD <- function(fit, nsamples = 200, title = "") {
   draws_subset <- 
     subset_draws(fit$draws(), 
                  variable = "f_star", 
@@ -60,10 +61,11 @@ plot_PSD <- function(fit, nsamples = 200, title) {
     as_draws_matrix() |> 
     t()
 
-  spec <- spectrum(draws_subset, plot = FALSE)
+  spec <- mvspec(draws_subset, plot = FALSE, taper = 0.1, detrend = TRUE, demean = TRUE)
+  #spec <- spectrum(draws_subset, plot = FALSE)
   
   data.frame(
-    frequency = spec$freq,
+    frequency = spec$freq / 2,
     power = spec$spec
   ) |> 
     rowwise() |> 
@@ -94,7 +96,7 @@ data_df <- read_csv(path_to_csv, show_col_types = FALSE)
 x <- data_df$mjd
 y <- data_df$f_peak
 y_err <- data_df$f_peak_err
-x_star <- seq(from = min(x), to = max(x), length.out = 300)
+x_star <- seq(from = min(x), to = max(x), length.out = 200)
 
 data_df |> 
   ggplot() +
@@ -132,7 +134,7 @@ $$y \sim \mathcal{N}(f(x), \sigma_\textrm{noise}^2)$$
 
 $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
-$$k(x,x') = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
+$$k(x,x') = \eta \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
 
 $$\ell \sim  \mathrm{InvGamma}(5,5)$$
 
@@ -166,12 +168,11 @@ basic_fit <- basic_model$sample(
 ## MCMC Results
 
 ```{r}
-#| include: false
-basic_fit$cmdstan_diagnose()
+basic_fit$diagnostic_summary()
 ```
 
 ```{r}
-basic_fit$print(variables = c("eta", "ell", "sigma"), digits = 6)
+basic_fit$print(variables = c("eta", "ell", "sigma"), digits = 4)
 ```
 
 ## MCMC Plots
@@ -240,24 +241,23 @@ err_fit <- err_model$sample(
 ```
 
 ```{r}
-#| include: false
-err_fit$cmdstan_diagnose()
+err_fit$diagnostic_summary()
 ```
 
 ## MCMC Results
 
 ```{r}
-err_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
+err_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 5)
 ```
 
 ## MCMC Plots
 
 ```{r}
-mcmc_plots(err_fit, c("eta", "ell", "sigma[1]"))
+mcmc_plots(err_fit, c("eta", "ell"))
 ```
 
 ```{r fig.height=9}
-mcmc_dens(err_fit$draws(), regex_pars = "sigma", facet_args = list(nrow = 7))
+mcmc_dens(err_fit$draws(), regex_pars = "sigma", facet_args = list(nrow = 6))
 ```
 
 ## Posterior Predictive Samples
@@ -275,222 +275,6 @@ By including the observed observational errors for setting priors on the Gaussia
 plot_PSD(err_fit)
 ```  
 
-# SE Non-zero flat mean function Model
-
-- Constant mean function, learned from observations.
-- Weak prior on mean function intercept.
-- Squared exponential kernel function.
-- Heteroskedastic (Gaussian) noise.
-- Incorporate data on error in observations of each $y_i$.
-
-$$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
-
-$$f \sim \mathcal{GP}(C, k(x,  x'))$$
-
-$$C \sim \mathcal{U}[-1,1]$$
-
-$$k(x,x') = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
-
-$$\ell \sim \mathrm{InvGamma}(5,5)$$
-
-$$\eta \sim \mathcal{N}^+(0,1)$$
-
-$$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}(\boldsymbol{y})))$$
-
-```{r}
-flat_mean_model <- cmdstan_model("stan/flat_mean_model.stan")
-```
-
-```{r}
-#| message: false
-#| output: false
-data_list <- list(N = length(x), 
-                  x = x,
-                  y = y,
-                  y_stderr = y_err,
-                  x_star = x_star,
-                  N_star = length(x_star))
-
-flat_mean_fit <- flat_mean_model$sample(
-  data = data_list,
-  seed = 1,
-  chains = 4,
-  parallel_chains = 4,
-  iter_warmup = 1000,
-  iter_sampling = 1000,
-  refresh = 0
-)
-```
-
-```{r}
-#| include: false
-flat_mean_fit$cmdstan_diagnose()
-```
-
-## MCMC Results
-
-```{r}
-flat_mean_fit$print(variables = c("eta", "ell", "C", "sigma[1]"), digits = 6)
-```
-
-## MCMC Plots
-
-```{r}
-mcmc_plots(flat_mean_fit, variables = c("eta", "ell", "C"))
-```
-
-## Posterior Predictive Samples
-
-```{r}
-plot_postpred(flat_mean_fit, x, y, y_err, x_star) + 
-  geom_hline(aes(yintercept = mean(flat_mean_fit$draws("C"))), colour = "orange") 
-```
-
-## PSD
-
-```{r}
-#| message: false
-plot_PSD(flat_mean_fit)
-```
-
-# SE Fixed constant mean function Model
-
-- Constant mean function set at fixed value, e.g., mean of observations.
-- Squared exponential kernel function.
-- Heteroskedastic (Gaussian) noise.
-- Incorporate data on error in observations of each $y_i$.
-
-$$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
-
-$$f \sim \mathcal{GP}(C, k(x,  x')),\quad C \in \mathbb{R}$$
-
-$$k(x,x') = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
-
-$$\ell \sim \mathrm{InvGamma}(5,5)$$
-
-$$\eta \sim \mathcal{N}^+(0,1)$$
-
-$$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}(\boldsymbol{y})))$$
-
-```{r}
-fixed_mean_model <- cmdstan_model("stan/fixed_mean_model.stan")
-```
-
-## Mean Function = 0.2
-
-```{r}
-#| message: false
-#| output: false
-data_list <- list(N = length(x), 
-                  x = x,
-                  y = y,
-                  y_stderr = y_err,
-                  x_star = x_star,
-                  N_star = length(x_star),
-                  const_mean_value = 0.2)
-
-fixed_mean_fit <- fixed_mean_model$sample(
-  data = data_list,
-  seed = 1,
-  chains = 4,
-  parallel_chains = 4,
-  iter_warmup = 1000,
-  iter_sampling = 1000,
-  refresh = 0
-)
-```
-
-```{r}
-fixed_mean_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
-```
-
-```{r}
-plot_postpred(fixed_mean_fit, x, y, y_err, x_star) + 
-  geom_hline(aes(yintercept = 0.2), colour = "orange") 
-```
-
-```{r}
-#| message: false
-plot_PSD(fixed_mean_fit)
-```
-
-## Mean Function = 0.195
-
-```{r}
-#| message: false
-#| output: false
-data_list <- list(N = length(x), 
-                  x = x,
-                  y = y,
-                  y_stderr = y_err,
-                  x_star = x_star,
-                  N_star = length(x_star),
-                  const_mean_value = 0.195)
-
-fixed_mean_fit <- fixed_mean_model$sample(
-  data = data_list,
-  seed = 1,
-  chains = 4,
-  parallel_chains = 4,
-  iter_warmup = 1000,
-  iter_sampling = 1000,
-  refresh = 0
-)
-```
-
-```{r}
-fixed_mean_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
-```
-
-```{r}
-plot_postpred(fixed_mean_fit, x, y, y_err, x_star) + 
-  geom_hline(aes(yintercept = 0.195), colour = "orange") 
-```
-
-```{r}
-#| message: false
-plot_PSD(fixed_mean_fit)
-```
-
-## Mean Function = 0.18
-
-```{r}
-#| message: false
-#| output: false
-data_list <- list(N = length(x), 
-                  x = x,
-                  y = y,
-                  y_stderr = y_err,
-                  x_star = x_star,
-                  N_star = length(x_star),
-                  const_mean_value = 0.18)
-
-fixed_mean_fit <- fixed_mean_model$sample(
-  data = data_list,
-  seed = 1,
-  chains = 4,
-  parallel_chains = 4,
-  iter_warmup = 1000,
-  iter_sampling = 1000,
-  refresh = 0
-)
-```
-
-```{r}
-fixed_mean_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
-```
-
-```{r}
-plot_postpred(fixed_mean_fit, x, y, y_err, x_star) + 
-  geom_hline(aes(yintercept = 0.18), colour = "orange") 
-```
-
-```{r}
-#| message: false
-plot_PSD(fixed_mean_fit)
-```
-
-
 # Matern 3/2 kernel
 
 - Matern 3/2 covariance kernel
@@ -500,7 +284,7 @@ $$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
 
 $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
-$$k(x,x') = \eta^2 \left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell}\right\}$$
+$$k(x,x') = \eta \left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell}\right\}$$
 
 $$\ell \sim \mathrm{InvGamma}(5,5)$$
 
@@ -534,14 +318,13 @@ m32_fit <- matern32_model$sample(
 ```
 
 ```{r}
-#| include: false
-m32_fit$cmdstan_diagnose()
+m32_fit$diagnostic_summary()
 ```
 
 ## MCMC Results
 
 ```{r}
-m32_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
+m32_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 5)
 ```
 
 ## MCMC Plots
@@ -573,7 +356,7 @@ $$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
 
 $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
-$$k(x,x') = \eta^2 \left[ \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell_\mathrm{SE}^2}\right\} + \left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right\} \right]$$
+$$k(x,x') = \eta \left[ \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell_\mathrm{SE}^2}\right\} + \left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right\} \right]$$
 
 $$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(5,5)$$
 
@@ -612,7 +395,12 @@ SE_M32_fit <- SE_M32_model$sample(
 ## MCMC Results
 
 ```{r}
-SE_M32_fit$print(variables = c("eta", "ell_SE", "ell_M", "sigma[1]"), digits = 6)
+SE_M32_fit$diagnostic_summary()
+```
+
+
+```{r}
+SE_M32_fit$print(variables = c("eta", "ell_SE", "ell_M", "sigma[1]"), digits = 5)
 ```
 
 ## MCMC Plots
@@ -673,7 +461,7 @@ data_list <- list(N = length(data_df$mjd),
 
 SE_M32_2_fit <- SE_M32_2_model$sample(
   data = data_list,
-  seed = 1,
+  seed = 2,
   chains = 4,
   parallel_chains = 4,
   iter_warmup = 2000,
@@ -683,14 +471,13 @@ SE_M32_2_fit <- SE_M32_2_model$sample(
 ```
 
 ```{r}
-#| include: false
-SE_M32_2_fit$cmdstan_diagnose()
+SE_M32_2_fit$diagnostic_summary()
 ```
 
 ## MCMC Results
 
 ```{r}
-SE_M32_2_fit$print(variables = c("eta_SE", "eta_M", "ell_SE", "ell_M", "sigma[1]"), digits = 5)
+SE_M32_2_fit$print(variables = c("eta_SE", "eta_M", "ell_SE", "ell_M", "sigma[1]"), digits = 4)
 ```
 
 ## MCMC Plots
@@ -718,7 +505,7 @@ $$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
 
 $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
-$$k(x,x') = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell_\mathrm{SE}^2}\right\}\left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right\}$$
+$$k(x,x') = \eta \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell_\mathrm{SE}^2}\right\}\left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right\}$$
 
 $$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(5,5)$$
 
@@ -755,14 +542,13 @@ SExM32_fit <- SExM32_model$sample(
 ```
 
 ```{r}
-#| include: false
-SExM32_fit$cmdstan_diagnose()
+SExM32_fit$diagnostic_summary()
 ```
 
 ## MCMC Results
 
 ```{r}
-SExM32_fit$print(variables = c("eta", "ell_SE", "ell_M", "sigma[1]", "f_star[1]"), digits = 6)
+SExM32_fit$print(variables = c("eta", "ell_SE", "ell_M", "sigma[1]", "f_star[1]"), digits = 5)
 ```
 
 ## MCMC Plots
@@ -772,7 +558,7 @@ mcmc_plots(SExM32_fit, c("eta", "ell_SE", "ell_M"))
 ```
 
 ```{r fig.height=9}
-mcmc_dens(SExM32_fit$draws(), regex_pars = "sigma", facet_args = list(nrow = 7))
+mcmc_dens(SExM32_fit$draws(), regex_pars = "sigma", facet_args = list(nrow = 6))
 ```
 
 ## Posterior Predictive Samples
@@ -788,13 +574,92 @@ plot_postpred(SExM32_fit, x, y, y_err, x_star)
 plot_PSD(SExM32_fit)
 ```
 
-# Matern 3/2 + QP kernel
+# SE + Periodic
 
 $$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
 
 $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
-$$k(x,x') = \eta^2 \left[ \exp\left\{ -\frac{2 \sin^2\left( \pi\frac{\sqrt{(x - x')^2}}{T}\right)}{\ell_\mathrm{P}^2}\right\} + \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell_\mathrm{SE}^2}\right\} + \left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right\} \right]$$
+$$k(x,x') = \eta \left[ \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell_\mathrm{SE}^2}\right\} + \exp\left\{ -\frac{2 \sin^2\left( \pi\frac{\sqrt{(x - x')^2}}{T}\right)}{\ell_\mathrm{P}^2}\right\} \right]$$
+
+$$\ell_\mathrm{P} \sim \mathrm{InvGamma}(5,5)$$
+
+$$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(5,5)$$
+
+$$\eta \sim \mathcal{N}^+(0,1)$$
+
+$$T \sim \mathcal{U}[\textrm{minimum gap in x}, \textrm{range of x}]$$
+
+$$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}(\boldsymbol{y})))$$
+
+
+```{r}
+SE_P_model <- cmdstan_model(stan_file = "stan/SE_P_model.stan")
+```
+
+```{r}
+#| output: false
+#| message: false
+data_list <- list(N = length(data_df$mjd), 
+                  x = data_df$mjd,
+                  y = data_df$f_peak,
+                  y_stderr = data_df$f_peak_err,
+                  x_star = x_star,
+                  N_star = length(x_star),
+                  T_lb = min(diff(data_df$mjd)),
+                  T_ub = diff(range(data_df$mjd)))
+
+SE_P_fit <- SE_P_model$sample(
+  data = data_list,
+  seed = 1,
+  chains = 4,
+  parallel_chains = 4,
+  iter_warmup = 2000,
+  iter_sampling = 2000,
+  refresh = 0
+)
+```
+
+## MCMC Results
+
+```{r}
+SE_P_fit$diagnostic_summary()
+```
+
+```{r}
+SE_P_fit$print(variables = c("eta", "ell_SE", "ell_P", "T"), digits = 4)
+```
+
+## MCMC Plots
+
+```{r}
+mcmc_plots(SE_P_fit, c("eta", "ell_SE", "ell_P", "T"))
+```
+
+```{r fig.height=9}
+mcmc_dens(SE_P_fit$draws(), regex_pars = "sigma", facet_args = list(ncol = 5))
+```
+
+## Posterior Predictive Samples
+
+```{r}
+plot_postpred(SE_P_fit, x, y, y_err, x_star)
+```
+
+## PSD
+
+```{r}
+#| message: false
+plot_PSD(SE_P_fit)
+```
+
+# SE + Matern 3/2 + Periodic
+
+$$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
+
+$$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
+
+$$k(x,x') = \eta \left[ \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell_\mathrm{SE}^2}\right\} + \left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right\} + \exp\left\{ -\frac{2 \sin^2\left( \pi\frac{\sqrt{(x - x')^2}}{T}\right)}{\ell_\mathrm{P}^2}\right\} \right]$$
 
 $$\ell_\mathrm{P} \sim \mathrm{InvGamma}(5,5)$$
 
@@ -839,6 +704,10 @@ SE_M32_P_fit <- SE_M32_P_model$sample(
 ## MCMC Results
 
 ```{r}
+SE_M32_P_fit$diagnostic_summary()
+```
+
+```{r}
 SE_M32_P_fit$print(variables = c("eta", "ell_SE", "ell_M", "ell_P", "T"), digits = 4)
 ```
 
@@ -849,7 +718,7 @@ mcmc_plots(SE_M32_P_fit, c("eta", "ell_SE", "ell_M", "ell_P", "T"))
 ```
 
 ```{r fig.height=9}
-mcmc_dens(SE_M32_P_fit$draws(), regex_pars = "sigma", facet_args = list(nrow = 7))
+mcmc_dens(SE_M32_P_fit$draws(), regex_pars = "sigma", facet_args = list(ncol = 5))
 ```
 
 ## Posterior Predictive Samples
@@ -864,5 +733,3 @@ plot_postpred(SE_M32_P_fit, x, y, y_err, x_star)
 #| message: false
 plot_PSD(SE_M32_P_fit)
 ```
-
-

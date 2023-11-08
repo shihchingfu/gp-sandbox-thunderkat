@@ -22,9 +22,9 @@ functions {
       vector[N_star] fstar_mu;
       matrix[N_star, N_star] fstar_cov;
 
-      K = eta * ( gp_periodic_cov(x, 1.0, ell_P, T) +
-                  gp_exp_quad_cov(x, 1.0, ell_SE) +
-                  gp_matern32_cov(x, 1.0, ell_M) );
+      K = eta * ( gp_exp_quad_cov(x, 1.0, ell_SE) +
+                  gp_matern32_cov(x, 1.0, ell_M) +
+                  gp_periodic_cov(x, 1.0, ell_P, T) );
 
       for (n in 1:N)
         K[n, n] = K[n,n] + square(sigma[n]);
@@ -33,15 +33,15 @@ functions {
       alpha = mdivide_left_tri_low(L, y);
       alpha = mdivide_right_tri_low(alpha', L)';
 
-      k_x_xstar = eta * ( gp_periodic_cov(x, x_star, 1.0, ell_P, T) +
-                          gp_exp_quad_cov(x, x_star, 1.0, ell_SE) +
-                          gp_matern32_cov(x, x_star, 1.0, ell_M) );
+      k_x_xstar = eta * ( gp_exp_quad_cov(x, x_star, 1.0, ell_SE) +
+                          gp_matern32_cov(x, x_star, 1.0, ell_M) +
+                          gp_periodic_cov(x, x_star, 1.0, ell_P, T) );
       fstar_mu = k_x_xstar' * alpha;
 
       v = mdivide_left_tri_low(L, k_x_xstar);
-      fstar_cov = eta * ( gp_periodic_cov(x_star, 1.0, ell_P, T) +
-                          gp_exp_quad_cov(x_star, 1.0, ell_SE) +
-                          gp_matern32_cov(x_star, 1.0, ell_M) ) - v' * v;
+      fstar_cov = eta * ( gp_exp_quad_cov(x_star, 1.0, ell_SE) +
+                          gp_matern32_cov(x_star, 1.0, ell_M) +
+                          gp_periodic_cov(x_star, 1.0, ell_P, T) ) - v' * v;
 
       f_star = multi_normal_rng(fstar_mu, add_diag(fstar_cov, rep_vector(jitter, N_star)));
     }
@@ -70,7 +70,9 @@ parameters {
   vector<lower=0>[N] sigma; // heteroskedastic
 }
 model {
-  matrix[N, N] K = eta * ( gp_periodic_cov(x, 1.0, ell_P, T) + gp_exp_quad_cov(x, 1.0, ell_SE) + gp_matern32_cov(x, 1.0, ell_M) );
+  matrix[N, N] K = eta * ( gp_exp_quad_cov(x, 1.0, ell_SE) +
+                           gp_matern32_cov(x, 1.0, ell_M) +
+                           gp_periodic_cov(x, 1.0, ell_P, T) );
   matrix[N, N] L = cholesky_decompose(add_diag(K, sigma^2));
 
   ell_SE ~ inv_gamma(5, 5);

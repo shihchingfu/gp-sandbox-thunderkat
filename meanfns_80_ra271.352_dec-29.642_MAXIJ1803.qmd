@@ -1,0 +1,499 @@
+---
+title: "EDA of effect of mean functions on GP fits to lightcurve 428_..."
+execute: 
+  echo: false
+format: 
+  html:
+    toc: true
+    df-print: default 
+self-contained: true
+number-sections: true
+---
+
+Notebook examining the effect of mean functions on the fitting of GP to thunderKAT lightcurve ID$ 428_...
+
+```{r}
+#| message: false
+library(conflicted)
+library(ggplot2)
+library(readr)
+library(dplyr)
+library(here)
+library(cmdstanr)
+library(posterior)
+library(bayesplot)
+library(astsa)
+
+color_scheme_set("brightblue")
+register_knitr_engine(override = FALSE)
+
+mcmc_plots <- function(fit, variables) {
+  draws_arr <- fit$draws(format = "draws_array")
+  mcmc_trace(draws_arr, pars = variables, facet_args = list(nrow = 2)) |> print()
+  mcmc_dens(draws_arr, pars = variables, facet_args = list(nrow = 2)) |> print()
+  mcmc_pairs(draws_arr, pars = variables, off_diag_fun = "hex") |> print()
+}
+
+plot_postpred <- function(fit, x, y, y_err, x_star, title = "") {
+  postpred_draws <- as_draws_rvars(fit$draws("f_star"))
+  
+  ggplot() +
+    aes(x = x_star) +
+    geom_ribbon(aes(ymin = quantile(postpred_draws$f_star, probs = 0.16)[1,],
+                    ymax = quantile(postpred_draws$f_star, probs = 0.84)[1,]),
+                fill = "blue", alpha = 0.3) +
+    geom_ribbon(aes(ymin = quantile(postpred_draws$f_star, probs = 0.05)[1,],
+                    ymax = quantile(postpred_draws$f_star, probs = 0.95)[1,]),
+                fill = "blue", alpha = 0.3) +
+    geom_line(aes(y = median(postpred_draws$f_star)), colour = "black") +
+    geom_linerange(aes(x = x, y = y, 
+                       ymax = y + y_err, ymin = y - y_err), colour = "red")  +
+    geom_point(aes(x = x, y = y), size = 2, colour = "red") +
+    labs(x = "MJD", y = "Flux (Jy)", title = title) +
+    theme_classic()
+}
+
+plot_PSD <- function(fit, nsamples = 200, title = "") {
+  draws_subset <- 
+    subset_draws(fit$draws(), 
+                 variable = "f_star", 
+                 draw = 1:nsamples) |> 
+    as_draws_matrix() |> 
+    t()
+
+  spec <- mvspec(draws_subset, plot = FALSE, taper = 0.1, detrend = TRUE, demean = TRUE)
+  #spec <- spectrum(draws_subset, plot = FALSE)
+  
+  data.frame(
+    frequency = spec$freq / 2,
+    power = spec$spec
+  ) |> 
+    rowwise() |> 
+    mutate(q0.05 = quantile(c_across(starts_with("power.")), probs = 0.05),
+           q0.16 = quantile(c_across(starts_with("power.")), probs = 0.16),
+           median = median(c_across(starts_with("power."))),
+           q0.84 = quantile(c_across(starts_with("power.")), probs = 0.84),
+           q0.95 = quantile(c_across(starts_with("power.")), probs = 0.95)) |> 
+    ggplot() +
+    aes(x = frequency, y = median) +
+    geom_ribbon(aes(ymin = q0.16, ymax = q0.84), fill = "blue", alpha = 0.3) +
+    geom_ribbon(aes(ymin = q0.05, ymax = q0.95), fill = "blue", alpha = 0.3) +
+    geom_line() +
+    scale_x_log10() +
+    scale_y_log10() +
+    labs(x = "Frequency", y = "Spectral Density", title = title) +
+    theme_bw()
+}
+```
+
+
+# Light Curve
+
+```{r}
+csv_fname <- "80_ra271.352_dec-29.642_MAXIJ1803TraPDB_andersson.csv"
+path_to_csv <- here("data_raw", csv_fname)
+data_df <- read_csv(path_to_csv, show_col_types = FALSE)
+
+x <- data_df$mjd
+y <- data_df$f_peak
+y_err <- data_df$f_peak_err
+x_star <- seq(from = min(x), to = max(x), length.out = 300)
+
+data_df |> 
+  ggplot() +
+  aes(x = mjd, y = f_peak, 
+      ymax = f_peak + f_peak_err, ymin = f_peak - f_peak_err) +
+  geom_point(colour = "red") +
+  geom_linerange(colour = "red") +
+  geom_rug(sides = "b", outside = TRUE, colour = "red") +
+  coord_cartesian(clip = "off") +
+  labs(title = csv_fname, x = "MJD", y = "Flux (Jy)") +
+  theme_classic()
+```
+
+```{r}
+#| include: false
+summary(data_df[c("f_peak", "f_peak_err", "mjd")])
+```
+
+- The light curve has $N =$ `r NROW(data_df)` observations over a range of `r round(diff(range(x)), 2)` days.
+- Observations are evenly spread over the time range.
+- The shortest gap between observations is `r round(min(diff(x)), 2)` days.
+- The longest gap between observations is `r round(max(diff(x)), 2)` days.
+- The mean flux density is $\bar{y} =$ `r format(signif(mean(y),3), scientific = F)` Jy.
+- The mean standard error in the observations is `r format(signif(mean(y_err),3), scientific = F)` Jy.
+- The observational noise is very small relative to the brightness of the observations. 
+
+# Flat zero mean function Model
+
+- Zero constant mean function.
+- Squared exponential kernel function.
+- Heteroskedastic (Gaussian) noise.
+- Incorporate data on error in observations of each $y_i$.
+
+$$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
+
+$$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
+
+$$k(x,x') = \eta \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
+
+$$\ell \sim \mathrm{InvGamma}(5,5)$$
+
+$$\eta \sim \mathcal{N}^+(0,1)$$
+
+$$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}(\boldsymbol{y})))$$
+
+```{r}
+err_model <- cmdstan_model("stan/err_model.stan")
+```
+
+```{r}
+#| output: false
+#| message: false
+data_list <- list(N = length(x), 
+                  x = x,
+                  y = y,
+                  y_stderr = y_err,
+                  x_star = x_star,
+                  N_star = length(x_star))
+
+err_fit <- err_model$sample(
+  data = data_list,
+  seed = 1,
+  chains = 4,
+  parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
+  refresh = 0
+)
+```
+
+## MCMC Results
+
+```{r}
+err_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
+```
+
+## MCMC Plots
+
+```{r}
+mcmc_plots(err_fit, c("eta", "ell"))
+```
+
+```{r fig.height=9}
+mcmc_dens(err_fit$draws(), regex_pars = "sigma", facet_args = list(ncol = 5))
+```
+
+## Posterior Predictive Samples
+
+```{r}
+plot_postpred(err_fit, x, y, y_err, x_star)
+```
+
+By including the observed observational errors for setting priors on the Gaussian noise of each observation, the fitted median passes through each of the observed points.
+
+## PSD
+
+```{r}
+#| message: false
+plot_PSD(err_fit)
+```  
+
+# Flat zero mean function, mean centred data Model
+
+- Zero constant mean function.
+- Squared exponential kernel function.
+- Heteroskedastic (Gaussian) noise.
+- Incorporate data on error in observations of each $y_i$.
+- Observations have had mean subtracted from them.
+
+$$y'_i = y_i - \bar{y}$$
+
+$$y'_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
+
+$$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
+
+$$k(x,x') = \eta \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
+
+$$\ell \sim \mathrm{InvGamma}(5,5)$$
+
+$$\eta \sim \mathcal{N}^+(0,1)$$
+
+$$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}(\boldsymbol{y})))$$
+
+```{r}
+#| output: false
+#| message: false
+yprime <- y - mean(y)
+
+data_list <- list(N = length(x), 
+                  x = x,
+                  y = yprime,
+                  y_stderr = y_err,
+                  x_star = x_star,
+                  N_star = length(x_star))
+
+ctr_fit <- err_model$sample(
+  data = data_list,
+  seed = 2,
+  chains = 4,
+  parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
+  refresh = 0
+)
+```
+
+## MCMC Results
+
+```{r}
+ctr_fit$diagnostic_summary()
+```
+
+
+```{r}
+ctr_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
+```
+
+## MCMC Plots
+
+```{r}
+mcmc_plots(ctr_fit, c("eta", "ell"))
+```
+
+```{r fig.height=9}
+mcmc_dens(ctr_fit$draws(), regex_pars = "sigma", facet_args = list(ncol = 5))
+```
+
+## Posterior Predictive Samples
+
+```{r}
+plot_postpred(ctr_fit, x, yprime, y_err, x_star)
+```
+
+Subtracting the mean from the data before fitting the GP has had a detrimental effect on the model!
+
+
+## PSD
+
+```{r}
+#| message: false
+plot_PSD(ctr_fit)
+```  
+
+
+
+# Non-zero flat mean function Model
+
+- Constant mean function, learned from observations.
+- Weak prior on mean function intercept.
+- Squared exponential kernel function.
+- Heteroskedastic (Gaussian) noise.
+- Incorporate data on error in observations of each $y_i$.
+
+$$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
+
+$$f \sim \mathcal{GP}(C, k(x,  x'))$$
+
+$$C \sim \mathcal{U}[-1,1]$$
+
+$$k(x,x') = \eta \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
+
+$$\ell \sim \mathrm{InvGamma}(5,5)$$
+
+$$\eta \sim \mathcal{N}^+(0,1)$$
+
+$$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}(\boldsymbol{y})))$$
+
+```{r}
+flat_mean_model <- cmdstan_model("stan/flat_mean_model.stan")
+```
+
+```{r}
+#| message: false
+#| output: false
+data_list <- list(N = length(x), 
+                  x = x,
+                  y = y,
+                  y_stderr = y_err,
+                  x_star = x_star,
+                  N_star = length(x_star))
+
+flat_mean_fit <- flat_mean_model$sample(
+  data = data_list,
+  seed = 1,
+  chains = 4,
+  parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
+  refresh = 0
+)
+```
+
+```{r}
+flat_mean_fit$diagnostic_summary()
+```
+
+## MCMC Results
+
+```{r}
+flat_mean_fit$print(variables = c("eta", "ell", "C", "sigma[1]"), digits = 6)
+```
+
+## MCMC Plots
+
+```{r}
+mcmc_plots(flat_mean_fit, variables = c("eta", "ell", "C"))
+```
+
+## Posterior Predictive Samples
+
+```{r}
+plot_postpred(flat_mean_fit, x, y, y_err, x_star) + 
+  geom_hline(aes(yintercept = mean(flat_mean_fit$draws("C"))), colour = "orange") 
+```
+
+## PSD
+
+```{r}
+#| message: false
+plot_PSD(flat_mean_fit)
+```
+
+# SE Fixed constant mean function Model
+
+- Constant mean function set at fixed value, e.g., mean of observations.
+- Squared exponential kernel function.
+- Heteroskedastic (Gaussian) noise.
+- Incorporate data on error in observations of each $y_i$.
+
+$$y_i \sim \mathcal{N}(f(x_i), \sigma_i^2)$$
+
+$$f \sim \mathcal{GP}(C, k(x,  x')),\quad C \in \mathbb{R}$$
+
+$$k(x,x') = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
+
+$$\ell \sim \mathrm{InvGamma}(5,5)$$
+
+$$\eta \sim \mathcal{N}^+(0,1)$$
+
+$$\sigma_i \sim \mathcal{N}^+(\textrm{stderr}(y_i), \mathrm{Var}(\textrm{stderr}(\boldsymbol{y})))$$
+
+```{r}
+fixed_mean_model <- cmdstan_model("stan/fixed_mean_model.stan")
+```
+
+## Mean Function = 0.062
+
+```{r}
+#| message: false
+#| output: false
+data_list <- list(N = length(x), 
+                  x = x,
+                  y = y,
+                  y_stderr = y_err,
+                  x_star = x_star,
+                  N_star = length(x_star),
+                  const_mean_value = 0.062)
+
+fixed_mean0.062_fit <- fixed_mean_model$sample(
+  data = data_list,
+  seed = 1,
+  chains = 4,
+  parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
+  refresh = 0
+)
+```
+
+```{r}
+fixed_mean0.062_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
+```
+
+```{r}
+plot_postpred(fixed_mean0.062_fit, x, y, y_err, x_star) + 
+  geom_hline(aes(yintercept = 0.062), colour = "orange") 
+```
+
+```{r}
+#| message: false
+plot_PSD(fixed_mean0.062_fit)
+```
+
+## Mean Function = 0.058
+
+```{r}
+#| message: false
+#| output: false
+data_list <- list(N = length(x), 
+                  x = x,
+                  y = y,
+                  y_stderr = y_err,
+                  x_star = x_star,
+                  N_star = length(x_star),
+                  const_mean_value = 0.058)
+
+fixed_mean0.058_fit <- fixed_mean_model$sample(
+  data = data_list,
+  seed = 1,
+  chains = 4,
+  parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
+  refresh = 0
+)
+```
+
+```{r}
+fixed_mean0.058_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 5)
+```
+
+```{r}
+plot_postpred(fixed_mean0.058_fit, x, y, y_err, x_star) + 
+  geom_hline(aes(yintercept = 0.058), colour = "orange") 
+```
+
+```{r}
+#| message: false
+plot_PSD(fixed_mean0.058_fit)
+```
+
+## Mean Function = 0.055
+
+```{r}
+#| message: false
+#| output: false
+data_list <- list(N = length(x), 
+                  x = x,
+                  y = y,
+                  y_stderr = y_err,
+                  x_star = x_star,
+                  N_star = length(x_star),
+                  const_mean_value = 0.055)
+
+fixed_mean0.055_fit <- fixed_mean_model$sample(
+  data = data_list,
+  seed = 1,
+  chains = 4,
+  parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
+  refresh = 0
+)
+```
+
+```{r}
+fixed_mean0.055_fit$print(variables = c("eta", "ell", "sigma[1]"), digits = 6)
+```
+
+```{r}
+plot_postpred(fixed_mean0.055_fit, x, y, y_err, x_star) + 
+  geom_hline(aes(yintercept = 0.055), colour = "orange") 
+```
+
+```{r}
+#| message: false
+plot_PSD(fixed_mean0.055_fit)
+```
+
