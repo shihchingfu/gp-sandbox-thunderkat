@@ -47,6 +47,7 @@ data {
   vector[N] y_stderr;
   int<lower=1> N_star;
   array[N_star] real x_star;
+  real min_xgap;
 }
 transformed data {
   vector[N] mu = rep_vector(0, N);
@@ -62,8 +63,8 @@ model {
   matrix[N, N] K = eta_SE*gp_exp_quad_cov(x, 1.0, ell_SE) + eta_M*gp_matern32_cov(x, 1.0, ell_M);
   matrix[N, N] L = cholesky_decompose(add_diag(K, sigma^2));
 
-  ell_SE ~ inv_gamma(5, 5);
-  ell_M ~ inv_gamma(5, 5);
+  ell_SE ~ inv_gamma(3, 8 * ceil(min_xgap));
+  ell_M ~ inv_gamma(3, 8 * ceil(min_xgap));
   eta_SE ~ std_normal();
   eta_M ~ std_normal();
   sigma ~ normal(y_stderr, sd(y_stderr)); // use observed error estimates
