@@ -1,5 +1,5 @@
 ---
-title: "EDA of effect of mean functions on GP fits to lightcurve 428_..."
+title: "EDA of effect of mean functions on GP fits to lightcurve 80_..."
 execute: 
   echo: false
 format: 
@@ -137,7 +137,7 @@ $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
 $$k(x,x') = \eta \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
 
-$$\ell \sim \mathrm{InvGamma}(5,5)$$
+$$\ell \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
 $$\eta \sim \mathcal{N}^+(0,1)$$
 
@@ -155,7 +155,8 @@ data_list <- list(N = length(x),
                   y = y,
                   y_stderr = y_err,
                   x_star = x_star,
-                  N_star = length(x_star))
+                  N_star = length(x_star),
+                  min_xgap = min(diff(x)))
 
 err_fit <- err_model$sample(
   data = data_list,
@@ -199,7 +200,7 @@ By including the observed observational errors for setting priors on the Gaussia
 plot_PSD(err_fit)
 ```  
 
-# Flat zero mean function, mean centred data Model
+# Flat zero mean centred data Model
 
 - Zero constant mean function.
 - Squared exponential kernel function.
@@ -215,7 +216,7 @@ $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
 $$k(x,x') = \eta \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
 
-$$\ell \sim \mathrm{InvGamma}(5,5)$$
+$$\ell \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
 $$\eta \sim \mathcal{N}^+(0,1)$$
 
@@ -231,7 +232,8 @@ data_list <- list(N = length(x),
                   y = yprime,
                   y_stderr = y_err,
                   x_star = x_star,
-                  N_star = length(x_star))
+                  N_star = length(x_star),
+                  min_xgap = min(diff(x)))
 
 ctr_fit <- err_model$sample(
   data = data_list,
@@ -281,8 +283,6 @@ Subtracting the mean from the data before fitting the GP has had a detrimental e
 plot_PSD(ctr_fit)
 ```  
 
-
-
 # Non-zero flat mean function Model
 
 - Constant mean function, learned from observations.
@@ -299,7 +299,7 @@ $$C \sim \mathcal{U}[-1,1]$$
 
 $$k(x,x') = \eta \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
 
-$$\ell \sim \mathrm{InvGamma}(5,5)$$
+$$\ell \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
 $$\eta \sim \mathcal{N}^+(0,1)$$
 
@@ -317,7 +317,8 @@ data_list <- list(N = length(x),
                   y = y,
                   y_stderr = y_err,
                   x_star = x_star,
-                  N_star = length(x_star))
+                  N_star = length(x_star),
+                  min_xgap = min(diff(x)))
 
 flat_mean_fit <- flat_mean_model$sample(
   data = data_list,
@@ -373,7 +374,7 @@ $$f \sim \mathcal{GP}(C, k(x,  x')),\quad C \in \mathbb{R}$$
 
 $$k(x,x') = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
 
-$$\ell \sim \mathrm{InvGamma}(5,5)$$
+$$\ell \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
 $$\eta \sim \mathcal{N}^+(0,1)$$
 
@@ -394,6 +395,7 @@ data_list <- list(N = length(x),
                   y_stderr = y_err,
                   x_star = x_star,
                   N_star = length(x_star),
+                  min_xgap = min(diff(x)),
                   const_mean_value = 0.062)
 
 fixed_mean0.062_fit <- fixed_mean_model$sample(
@@ -432,6 +434,7 @@ data_list <- list(N = length(x),
                   y_stderr = y_err,
                   x_star = x_star,
                   N_star = length(x_star),
+                  min_xgap = min(diff(x)),
                   const_mean_value = 0.058)
 
 fixed_mean0.058_fit <- fixed_mean_model$sample(
@@ -470,6 +473,7 @@ data_list <- list(N = length(x),
                   y_stderr = y_err,
                   x_star = x_star,
                   N_star = length(x_star),
+                  min_xgap = min(diff(x)),
                   const_mean_value = 0.055)
 
 fixed_mean0.055_fit <- fixed_mean_model$sample(

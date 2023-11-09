@@ -136,7 +136,7 @@ $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
 $$k(x,x') = \eta \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
 
-$$\ell \sim  \mathrm{InvGamma}(5,5)$$
+$$\ell \sim  \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
 $$\eta \sim \mathcal{N}^+(0,1)$$
 
@@ -153,7 +153,8 @@ data_list <- list(N = length(x),
                   x = x,
                   y = y,
                   x_star = x_star,
-                  N_star = length(x_star))
+                  N_star = length(x_star),
+                  min_xgap = min(diff(x)))
 
 basic_fit <- basic_model$sample(
   data = data_list,
@@ -209,7 +210,7 @@ $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
 $$k(x,x') = \eta^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell^2}\right\}$$
 
-$$\ell \sim \mathrm{InvGamma}(5,5)$$
+$$\ell \sim  \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
 $$\eta \sim \mathcal{N}^+(0,1)$$
 
@@ -227,7 +228,8 @@ data_list <- list(N = length(x),
                   y = y,
                   y_stderr = y_err,
                   x_star = x_star,
-                  N_star = length(x_star))
+                  N_star = length(x_star),
+                  min_xgap = min(diff(x)))
 
 err_fit <- err_model$sample(
   data = data_list,
@@ -286,7 +288,7 @@ $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
 $$k(x,x') = \eta \left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell}\right\}$$
 
-$$\ell \sim \mathrm{InvGamma}(5,5)$$
+$$\ell \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
 $$\eta \sim \mathcal{N}^+(0,1)$$
 
@@ -358,9 +360,9 @@ $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
 $$k(x,x') = \eta \left[ \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell_\mathrm{SE}^2}\right\} + \left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right\} \right]$$
 
-$$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(5,5)$$
+$$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
-$$\ell_\mathrm{M} \sim \mathrm{InvGamma}(5,5)$$
+$$\ell_\mathrm{M} \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
 $$\eta \sim \mathcal{N}^+(0,1)$$
 
@@ -379,7 +381,8 @@ data_list <- list(N = length(data_df$mjd),
                   y = data_df$f_peak,
                   y_stderr = data_df$f_peak_err,
                   x_star = x_star,
-                  N_star = length(x_star))
+                  N_star = length(x_star),
+                  min_xgap = min(diff(x)))
 
 SE_M32_fit <- SE_M32_model$sample(
   data = data_list,
@@ -434,9 +437,9 @@ $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
 $$k(x,x') = \eta_\textrm{SE}^2 \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell_\mathrm{SE}^2}\right\} + \eta^2_\textrm{M}\left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right\}$$
 
-$$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(5,5)$$
+$$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
-$$\ell_\mathrm{M} \sim \mathrm{InvGamma}(5,5)$$
+$$\ell_\mathrm{M} \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
 $$\eta_\textrm{SE} \sim \mathcal{N}^+(0,1)$$
 
@@ -457,7 +460,8 @@ data_list <- list(N = length(data_df$mjd),
                   y = data_df$f_peak,
                   y_stderr = data_df$f_peak_err,
                   x_star = x_star,
-                  N_star = length(x_star))
+                  N_star = length(x_star),
+                  min_xgap = min(diff(x)))
 
 SE_M32_2_fit <- SE_M32_2_model$sample(
   data = data_list,
@@ -507,9 +511,9 @@ $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
 $$k(x,x') = \eta \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell_\mathrm{SE}^2}\right\}\left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right\}$$
 
-$$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(5,5)$$
+$$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
-$$\ell_\mathrm{M} \sim \mathrm{InvGamma}(5,5)$$
+$$\ell_\mathrm{M} \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
 $$\eta \sim \mathcal{N}^+(0,1)$$
 
@@ -528,7 +532,8 @@ data_list <- list(N = length(data_df$mjd),
                   y = data_df$f_peak,
                   y_stderr = data_df$f_peak_err,
                   x_star = x_star,
-                  N_star = length(x_star))
+                  N_star = length(x_star),
+                  min_xgap = min(diff(x)))
 
 SExM32_fit <- SExM32_model$sample(
   data = data_list,
@@ -582,9 +587,9 @@ $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
 $$k(x,x') = \eta \left[ \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell_\mathrm{SE}^2}\right\} + \exp\left\{ -\frac{2 \sin^2\left( \pi\frac{\sqrt{(x - x')^2}}{T}\right)}{\ell_\mathrm{P}^2}\right\} \right]$$
 
-$$\ell_\mathrm{P} \sim \mathrm{InvGamma}(5,5)$$
+$$\ell_\mathrm{P} \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
-$$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(5,5)$$
+$$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
 $$\eta \sim \mathcal{N}^+(0,1)$$
 
@@ -606,12 +611,13 @@ data_list <- list(N = length(data_df$mjd),
                   y_stderr = data_df$f_peak_err,
                   x_star = x_star,
                   N_star = length(x_star),
-                  T_lb = min(diff(data_df$mjd)),
-                  T_ub = diff(range(data_df$mjd)))
+                  min_xgap = min(diff(x)),
+                  T_ub = diff(range(data_df$mjd)),
+                  T_lb = diff(range(data_df$mjd))/4)
 
 SE_P_fit <- SE_P_model$sample(
   data = data_list,
-  seed = 1,
+  seed = 2,
   chains = 4,
   parallel_chains = 4,
   iter_warmup = 2000,
@@ -661,11 +667,11 @@ $$f \sim \mathcal{GP}(\boldsymbol{0}, k(x,  x'))$$
 
 $$k(x,x') = \eta \left[ \exp\left\{ -\frac{1}{2}\frac{(x - x')^2}{\ell_\mathrm{SE}^2}\right\} + \left( 1 + \frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right) \exp\left\{ -\frac{\sqrt{3(x - x')^2}}{\ell_\mathrm{M}}\right\} + \exp\left\{ -\frac{2 \sin^2\left( \pi\frac{\sqrt{(x - x')^2}}{T}\right)}{\ell_\mathrm{P}^2}\right\} \right]$$
 
-$$\ell_\mathrm{P} \sim \mathrm{InvGamma}(5,5)$$
+$$\ell_\mathrm{P} \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
-$$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(5,5)$$
+$$\ell_\mathrm{SE} \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
-$$\ell_\mathrm{M} \sim \mathrm{InvGamma}(5,5)$$
+$$\ell_\mathrm{M} \sim \mathrm{InvGamma}(3, 8 \times \lceil\textrm{min x gap}\rceil)$$
 
 $$\eta \sim \mathcal{N}^+(0,1)$$
 
@@ -687,7 +693,8 @@ data_list <- list(N = length(data_df$mjd),
                   y_stderr = data_df$f_peak_err,
                   x_star = x_star,
                   N_star = length(x_star),
-                  T_lb = min(diff(data_df$mjd)),
+                  min_xgap = min(diff(x)),
+                  T_lb = diff(range(data_df$mjd))/4,
                   T_ub = diff(range(data_df$mjd)))
 
 SE_M32_P_fit <- SE_M32_P_model$sample(
