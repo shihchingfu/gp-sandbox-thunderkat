@@ -306,7 +306,8 @@ data_list <- list(N = length(data_df$mjd),
                   y = data_df$f_peak,
                   y_stderr = data_df$f_peak_err,
                   x_star = x_star,
-                  N_star = length(x_star))
+                  N_star = length(x_star),
+                  min_xgap = min(diff(data_df$mjd)))
 
 m32_fit <- matern32_model$sample(
   data = data_list,
