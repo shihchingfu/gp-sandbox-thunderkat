@@ -1,46 +1,24 @@
 digraph {
-	log_2ell_SE_sq [label="log_2ell_SE_sq
+	ell_M32 [label="ell_M32
 ~
-Uniform" shape=ellipse]
-	ell_SE [label="ell_SE
-~
-Deterministic" shape=box]
-	log_2ell_M_sq [label="log_2ell_M_sq
-~
-Uniform" shape=ellipse]
+InvGamma" shape=ellipse]
 	eta [label="eta
 ~
-Deterministic" shape=box]
-	log_eta [label="log_eta
+TruncatedNormal" shape=ellipse]
+	ell_SE [label="ell_SE
 ~
-Uniform" shape=ellipse]
-	ell_M [label="ell_M
-~
-Deterministic" shape=box]
+InvGamma" shape=ellipse]
 	subgraph cluster21 {
 		y [label="y
 ~
 MvNormal" shape=ellipse style=filled]
 		sig [label="sig
 ~
-HalfNormal" shape=ellipse]
+TruncatedNormal" shape=ellipse]
 		label=21 labeljust=r labelloc=b style=rounded
 	}
-	subgraph cluster300 {
-		f_star [label="f_star
-~
-MvNormal" shape=ellipse]
-		label=300 labeljust=r labelloc=b style=rounded
-	}
-	log_2ell_SE_sq -> ell_SE
-	log_2ell_M_sq -> ell_M
-	log_eta -> eta
+	ell_M32 -> y
 	eta -> y
-	ell_M -> y
-	sig -> y
 	ell_SE -> y
-	eta -> f_star
-	ell_M -> f_star
-	sig -> f_star
-	ell_SE -> f_star
+	sig -> y
 }
