@@ -479,3 +479,123 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
         )
     return gpSE_gpM32_trace, gpSE_gpM32_dag
 
+def fit_gpSE_gpPer(path_to_csv, rng_seed=None):
+    """Fit compound GP model: Squared Exponential GP + Periodic GP."""
+
+    lc = pd.read_csv(path_to_csv)
+    y = lc["f_peak"].to_numpy()
+    y_stderr = lc["f_peak_err"].to_numpy()
+    y_stderr_sd = np.nanstd(y_stderr)
+    t = lc["mjd"].to_numpy()
+    t_mingap = np.diff(t).min()
+    t_range = np.ptp(t)
+
+    with pm.Model() as model:
+
+        std_norm_dist = pm.Normal.dist(mu=0.0, sigma=1.0)
+        eta_SE = pm.Truncated("eta_SE", std_norm_dist, lower=0, upper=None)
+        eta_Per = pm.Truncated("eta_Per", std_norm_dist, lower=0, upper=None)
+
+        ell_SE = pm.InverseGamma("ell_SE", alpha=3, beta=8*math.ceil(t_mingap))
+        ell_Per = pm.InverseGamma("ell_Per", alpha=3, beta=8*math.ceil(t_mingap))
+
+        T = pm.Uniform("T", lower=t_range/4, upper=t_range)
+
+        cov_SE = eta_SE * pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE)
+        gp_SE = pm.gp.Marginal(cov_func=cov_SE)
+
+        cov_Per = eta_Per * pm.gp.cov.Periodic(input_dim=1, period=T, ls=ell_Per)
+        gp_Per = pm.gp.Marginal(cov_func=cov_Per)
+
+        gp = gp_SE + gp_Per
+
+        err_norm_dist = pm.Normal.dist(mu=y_stderr, sigma=y_stderr_sd)
+        sig = pm.Truncated("sig", err_norm_dist, lower=0, upper=None)
+        cov_noise = pm.gp.cov.WhiteNoise(sigma=sig)
+
+        f = gp.marginal_likelihood(
+            "f",
+            X=t.reshape(-1,1),
+            y=y.reshape(-1,1).flatten(),
+            sigma=cov_noise
+        )
+
+        gpSE_gpPer_dag = pm.model_to_graphviz(model)
+        gpSE_gpPer_trace = pm.sample_prior_predictive(samples=N_PPC, random_seed=rng_seed)
+
+        gpSE_gpPer_trace.extend(
+            pm.sample(
+                draws=N_DRAWS,
+                tune=N_TUNE,
+                chains=4,
+                cores=4,
+                random_seed=rng_seed
+            )
+        )
+
+        t_new = np.linspace(
+            start=np.floor(t.min()),
+            stop=np.ceil(t.max()),
+            num = N_NEW
+        ).reshape(-1,1)
+
+        f_star_SE = gp_SE.conditional("f_star_SE", Xnew=t_new,
+                                      given={"X": t.reshape(-1,1), "y": y.reshape(-1,1).flatten(), "sigma": sig, "gp": gp})
+
+        f_star_Per = gp_Per.conditional("f_star_Per", Xnew=t_new,
+                                      given={"X": t.reshape(-1,1), "y": y.reshape(-1,1).flatten(), "sigma": sig, "gp": gp})
+
+        f_star = gp.conditional(name="f_star", Xnew=t_new, jitter=1e-6, pred_noise=False)
+
+        gpSE_gpPer_trace.extend(
+            pm.sample_posterior_predictive(
+                gpSE_gpPer_trace.posterior,
+                var_names=["f_star", "f_star_SE", "f_star_Per"],
+                random_seed=rng_seed
+            )
+        )
+    return gpSE_gpPer_trace, gpSE_gpPer_dag
+
+
+
+def plot_welch_psds(trace, variable_names=("f_star", "f_star_SE", "f_star_M32")):
+    """Plot Welch approximated PSD of GP posterior predictive samples for each constituent kernel."""
+
+    fig = plt.figure(figsize=FIG_SIZE)
+    ax = fig.add_subplot(1,1,1)
+
+    for var in variable_names:
+        postpred_DataArray = az.extract(trace, "posterior_predictive", var_names=var)
+
+        freqs_nd, welch_psds_nd  = signal.welch(
+            x=postpred_DataArray, axis=0,
+            fs=1,
+            nfft=WELCH_NFFT, detrend=WELCH_DETREND, scaling=WELCH_SCALING, average=WELCH_AVERAGE
+        )
+
+        welch_psds_dataset = xr.Dataset(
+            data_vars=dict(
+                power=(["freq", "sample"], welch_psds_nd)
+            ),
+            coords=dict(
+                freq=freqs_nd,
+                sample=range(1,postpred_DataArray.shape[1] + 1)
+            )
+        )
+
+        psd_median = welch_psds_dataset.median(dim="sample").to_array().to_numpy().flatten()
+        psd_q975 = welch_psds_dataset.quantile(q=0.975, dim="sample").to_array().to_numpy().flatten()
+        psd_q84 = welch_psds_dataset.quantile(q=0.84, dim="sample").to_array().to_numpy().flatten()
+        psd_q16 = welch_psds_dataset.quantile(q=0.16, dim="sample").to_array().to_numpy().flatten()
+        psd_q025 = welch_psds_dataset.quantile(q=0.025, dim="sample").to_array().to_numpy().flatten()
+
+        #ax.fill_between(freqs_nd, psd_q16, psd_q84, alpha=0.7, label=r"68% HDI")
+        #ax.fill_between(freqs_nd, psd_q025, psd_q975, alpha=0.5, label=r"95% HDI")
+        ax.loglog(freqs_nd, psd_median, lw=2, alpha=0.8, label=f"{var}")
+
+    ax.set_xlabel("Frequency of modulation (Hz)")
+    ax.set_ylabel(r"PSD (Jy$^2$ Hz)")
+    ax.set_title(f"Welch PSD")
+    ax.legend()
+
+

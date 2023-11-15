@@ -1,0 +1,32 @@
+digraph {
+	ell_Per [label="ell_Per
+~
+InvGamma" shape=ellipse]
+	eta_Per [label="eta_Per
+~
+TruncatedNormal" shape=ellipse]
+	eta_SE [label="eta_SE
+~
+TruncatedNormal" shape=ellipse]
+	ell_SE [label="ell_SE
+~
+InvGamma" shape=ellipse]
+	T [label="T
+~
+Uniform" shape=ellipse]
+	subgraph cluster21 {
+		f [label="f
+~
+MvNormal" shape=ellipse style=filled]
+		sig [label="sig
+~
+TruncatedNormal" shape=ellipse]
+		label=21 labeljust=r labelloc=b style=rounded
+	}
+	ell_Per -> f
+	eta_Per -> f
+	T -> f
+	sig -> f
+	eta_SE -> f
+	ell_SE -> f
+}
