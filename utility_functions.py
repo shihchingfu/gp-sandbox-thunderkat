@@ -244,12 +244,23 @@ def fit_se_gp(path_to_csv, rng_seed=None):
     lc = pd.read_csv(path_to_csv)
     y = lc["f_peak"].to_numpy()
     y_stderr = lc["f_peak_err"].to_numpy()
-    y_stderr_sd = np.nanstd(y_stderr)
     t = lc["mjd"].to_numpy()
 
+    y_stderr_sd = np.nanstd(y_stderr)
     t_mingap = np.diff(t).min()
 
-    with pm.Model() as model:
+    t_new = np.linspace(
+        start=np.floor(t.min()),
+        stop=np.ceil(t.max()),
+        num = N_NEW
+    )
+
+    coords = {"t": t, "t_star": t_new}
+
+    with pm.Model(coords=coords) as model:
+        t_ = pm.ConstantData("t", t, dims="obs_id")
+        t_star_ = pm.ConstantData("t_star", t_new)
+
         std_norm_dist = pm.Normal.dist(mu=0.0, sigma=1.0)
 
         eta_SE = pm.Truncated("eta_SE", std_norm_dist, lower=0, upper=None)
@@ -266,11 +277,14 @@ def fit_se_gp(path_to_csv, rng_seed=None):
             "y", 
             X=t.reshape(-1,1),
             y=y.reshape(-1,1).flatten(),
-            sigma=cov_noise
+            sigma=cov_noise,
+            jitter=1e-6,
         )
 
         se_dag = pm.model_to_graphviz(model)
-        se_trace = pm.sample_prior_predictive(samples=N_PPC, random_seed=rng_seed)
+        se_trace = pm.sample_prior_predictive(samples=N_PPC, 
+                                              random_seed=rng_seed, 
+                                              idata_kwargs={"dims": {"y": ["t"]}})
 
         se_trace.extend(
             pm.sample(
@@ -282,19 +296,17 @@ def fit_se_gp(path_to_csv, rng_seed=None):
             )
         )
 
-        t_new = np.linspace(
-            start=np.floor(t.min()),
-            stop=np.ceil(t.max()),
-            num = N_NEW
-        ).reshape(-1,1)
-
-        f_star = gp.conditional(name="f_star", Xnew=t_new, jitter=1e-6, pred_noise=False)
+        f_star = gp.conditional(name="f_star",
+                                Xnew=t_new.reshape(-1,1),
+                                jitter=1e-6,
+                                pred_noise=False)
 
         se_trace.extend(
             pm.sample_posterior_predictive(
                 se_trace.posterior,
                 var_names=["f_star"],
-                random_seed=rng_seed
+                random_seed=rng_seed,
+                idata_kwargs={"dims": {"f_star": ["t_star"]}}
             )
         )
 
@@ -611,37 +623,37 @@ def plot_lsp(trace, path_to_csv, group="prior_predictive", variable_name="f"):
             t=this_t,
             y=this_y,
             dy=None,
-            fit_mean=False,
+            fit_mean=True,
             center_data=False,
             normalization="psd"
         ).power(freqs_f)
 
         pred_LSPs_np[0, :, lc_index] = this_power
 
-        pred_LSPs_xr = xr.Dataset(
-            data_vars=dict(
-                power=(["chain", "frequency", "draw"], pred_LSPs_np)
-            ),
-            coords=dict(
-                chain=[0],
-                frequency=freqs_f,
-                draw=range(0, n_pred_samples)
-            )
+    pred_LSPs_xr = xr.Dataset(
+        data_vars=dict(
+            power=(["chain", "frequency", "draw"], pred_LSPs_np)
+        ),
+        coords=dict(
+            chain=[0],
+            frequency=freqs_f,
+            draw=range(0, n_pred_samples)
         )
+    )
 
-    # Intervals at each frequency
-    pred_LSP_q67 = az.hdi(ary=pred_LSPs_xr, hdi_prob=0.67)
-    pred_LSP_q95 = az.hdi(ary=pred_LSPs_xr, hdi_prob=0.95)
+    psd_median = pred_LSPs_xr.median(dim="draw").to_array().to_numpy().flatten()
+    psd_q975 = pred_LSPs_xr.quantile(q=0.975, dim="draw").to_array().to_numpy().flatten()
+    psd_q84 = pred_LSPs_xr.quantile(q=0.84, dim="draw").to_array().to_numpy().flatten()
+    psd_q16 = pred_LSPs_xr.quantile(q=0.16, dim="draw").to_array().to_numpy().flatten()
+    psd_q025 = pred_LSPs_xr.quantile(q=0.025, dim="draw").to_array().to_numpy().flatten()
 
-    pred_LSP_median = pred_LSPs_xr.median(dim="draw")['power'].to_numpy().flatten()
-
-    fig = plt.figure(figsize=(12,5))
+    fig = plt.figure(figsize=FIG_SIZE)
     ax = fig.add_subplot(1,1,1)
-    plt.loglog(freqs_f, pred_LSP_median, "red", linewidth=2, label="Median of LSPs of $y_*$")
-    ax.fill_between(freqs_f, pred_LSP_q67['power'][:,0], pred_LSP_q67['power'][:,1], alpha=0.4, color="blue", label="LSP of $y_*$ 67% HDI")
-    ax.fill_between(freqs_f, pred_LSP_q95['power'][:,0], pred_LSP_q95['power'][:,1], alpha=0.1, color="blue", label="LSP of $y_*$ 95% HDI")
     sns.rugplot(freqs_f, height=0.025, ax=ax,  color='red')
-    plt.xlabel("Frequency")
-    plt.ylabel("Power")
-    plt.title(f"LSP of {group}")
-    plt.legend()
+    ax.fill_between(freqs_f, psd_q16, psd_q84, alpha=0.7, color="blue", label=r"68% HDI")
+    ax.fill_between(freqs_f, psd_q025, psd_q975, alpha=0.5, color="blue", label=r"95% HDI")
+    ax.loglog(freqs_f, psd_median, lw=2,color="red", alpha=0.8, label=r"Median")
+    ax.set_xlabel("Frequency")
+    ax.set_ylabel(r"Power")
+    ax.set_title(f"LSP of {group}")
+    ax.legend()
