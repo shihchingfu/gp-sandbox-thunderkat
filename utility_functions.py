@@ -2,12 +2,14 @@
 import math
 import numpy as np
 import pandas as pd
+import xarray as xr
 import matplotlib.pyplot as plt
 import pymc as pm
 from pymc.gp.util import plot_gp_dist
 import arviz as az
-import xarray as xr
 from scipy import signal
+import seaborn as sns
+from astropy.timeseries import LombScargle
 
 N_DRAWS = 1000
 N_TUNE = 2000
@@ -16,7 +18,9 @@ N_NEW = 300 # No. observation points in each posterior predictive sample
 
 FIG_SIZE = (10,6)
 
+WELCH_FS=20
 WELCH_NFFT=512
+WELCH_NPERSEG=None
 WELCH_DETREND=False
 WELCH_SCALING="density"
 WELCH_AVERAGE="median"
@@ -41,7 +45,7 @@ def plot_lc(path_to_csv):
     plt.ylabel("Flux")
     plt.legend()
 
-def plot_priorpred_samples(path_to_trace, path_to_csv):
+def plot_priorpred_samples(path_to_trace, path_to_csv, variable_name="f"):
     """Plot prior predictive samples and original data points"""
 
     this_lc = pd.read_csv(path_to_csv)
@@ -53,7 +57,7 @@ def plot_priorpred_samples(path_to_trace, path_to_csv):
     fig = plt.figure(figsize=FIG_SIZE)
     ax = fig.add_subplot(1,1,1)
 
-    for prior_pred in this_trace.prior_predictive.y.to_numpy()[0]:
+    for prior_pred in az.extract(this_trace, "prior_predictive", var_names=variable_name).to_numpy().T:
         ax.plot(this_x, prior_pred, lw=0.5, alpha=0.2, color="red")
 
     ax.scatter(x=this_x, y=this_y, s=1.5, c="blue", zorder=10)
@@ -61,45 +65,6 @@ def plot_priorpred_samples(path_to_trace, path_to_csv):
     ax.set_title("Samples from the GP prior")
     ax.set_ylabel("y")
     ax.set_xlabel("t")
-
-def plot_priorpred_PSD(path_to_trace, variable_name="y"):
-    """Plot the power spectral density of prior predictive samples"""
-
-    this_trace = az.from_netcdf(filename=path_to_trace)
-
-    priorpred_DataArray = az.extract(this_trace, "prior_predictive", var_names=variable_name)
-
-    freqs_nd, welch_psds_nd  = signal.welch(
-        x=priorpred_DataArray, axis=0,
-        fs=1,
-        nfft=WELCH_NFFT, detrend=WELCH_DETREND, scaling=WELCH_SCALING, average=WELCH_AVERAGE
-    )
-
-    welch_psds_dataset = xr.Dataset(
-        data_vars=dict(
-            power=(["freq", "sample"], welch_psds_nd)
-        ),
-        coords=dict(
-            freq=freqs_nd,
-            sample=range(1,priorpred_DataArray.shape[1] + 1)
-        )
-    )
-
-    psd_median = welch_psds_dataset.median(dim="sample").to_array().to_numpy().flatten()
-    psd_q975 = welch_psds_dataset.quantile(q=0.975, dim="sample").to_array().to_numpy().flatten()
-    psd_q84 = welch_psds_dataset.quantile(q=0.84, dim="sample").to_array().to_numpy().flatten()
-    psd_q16 = welch_psds_dataset.quantile(q=0.16, dim="sample").to_array().to_numpy().flatten()
-    psd_q025 = welch_psds_dataset.quantile(q=0.025, dim="sample").to_array().to_numpy().flatten()
-
-    fig = plt.figure(figsize=FIG_SIZE)
-    ax = fig.add_subplot(1,1,1)
-    ax.fill_between(freqs_nd, psd_q16, psd_q84, alpha=0.7, color="blue", label=r"68% HDI")
-    ax.fill_between(freqs_nd, psd_q025, psd_q975, alpha=0.5, color="blue", label=r"95% HDI")
-    ax.loglog(freqs_nd, psd_median, lw=2,color="red", alpha=0.8, label=r"Median")
-    ax.set_xlabel("Frequency of modulation (Hz)")
-    ax.set_ylabel(r"PSD (Jy$^2$ Hz)")
-    ax.set_title(f"Welch PSD of Prior Predictive Samples")
-    ax.legend()
 
 def plot_postpred_samples(path_to_trace, path_to_csv, variable_name="f_star"):
     """Plot posterior predicted samples and original data light curve"""
@@ -163,6 +128,22 @@ def plot_priorpost_cnr(path_to_trace, variable_names=None):
         scatter_kwargs={"alpha":0.01}
     )
 
+def plot_post_cnr(path_to_trace, variable_names=None):
+    """Plot 'corner plot' of posterior samples for each GP hyperparameter"""
+
+    this_trace = az.from_netcdf(path_to_trace)
+
+    az.plot_pair(
+        this_trace,
+        group="posterior",
+        var_names=variable_names,
+        marginals=True,
+        figsize=(6,6),
+        textsize=14,
+        kind=["scatter"],
+        scatter_kwargs={"alpha":0.1}
+    )
+
 def print_post_summary(path_to_trace, variable_names=None):
     """Wrapper for printing MCMC trace summary statistics from .NC file"""
 
@@ -178,14 +159,14 @@ def plot_traces(path_to_trace, variable_names=None):
     this_trace = az.from_netcdf(filename=path_to_trace)
     return az.plot_trace(this_trace, var_names=variable_names, combined=False)
 
-def plot_welch_psd(trace, variable_name="f_star"):
-    """Plot Welch approximated power spectral density (PSD) of GP posterior predictive samples."""
+def plot_welch_psd(trace, group="posterior_predictive", variable_name="f_star"):
+    """Plot Welch approximated power spectral density (PSD) of GP posterior/prior predictive samples."""
 
-    postpred_DataArray = az.extract(trace, "posterior_predictive", var_names=variable_name)
+    pred_DataArray = az.extract(trace, group=group, var_names=variable_name)
 
     freqs_nd, welch_psds_nd  = signal.welch(
-        x=postpred_DataArray, axis=0,
-        fs=1,
+        x=pred_DataArray, axis=0,
+        fs=WELCH_FS,
         nfft=WELCH_NFFT, detrend=WELCH_DETREND, scaling=WELCH_SCALING, average=WELCH_AVERAGE
     )
 
@@ -195,7 +176,7 @@ def plot_welch_psd(trace, variable_name="f_star"):
         ),
         coords=dict(
             freq=freqs_nd,
-            sample=range(1,postpred_DataArray.shape[1] + 1)
+            sample=range(1,pred_DataArray.shape[1] + 1)
         )
     )
 
@@ -207,12 +188,54 @@ def plot_welch_psd(trace, variable_name="f_star"):
 
     fig = plt.figure(figsize=FIG_SIZE)
     ax = fig.add_subplot(1,1,1)
+    sns.rugplot(freqs_nd, height=0.025, ax=ax,  color='red')
     ax.fill_between(freqs_nd, psd_q16, psd_q84, alpha=0.7, color="blue", label=r"68% HDI")
     ax.fill_between(freqs_nd, psd_q025, psd_q975, alpha=0.5, color="blue", label=r"95% HDI")
     ax.loglog(freqs_nd, psd_median, lw=2,color="red", alpha=0.8, label=r"Median")
     ax.set_xlabel("Frequency of modulation (Hz)")
     ax.set_ylabel(r"PSD (Jy$^2$ Hz)")
-    ax.set_title(f"Welch PSD of {variable_name}")
+    ax.set_title(f"Welch PSD of {group}")
+    ax.legend()
+
+def plot_welch_psds(trace, group="posterior_predictive", variable_names=("f_star", "f_star_SE", "f_star_M32")):
+    """Plot Welch approximated PSD of GP posterior predictive samples for each constituent kernel."""
+
+    fig = plt.figure(figsize=FIG_SIZE)
+    ax = fig.add_subplot(1,1,1)
+
+    for var in variable_names:
+        postpred_DataArray = az.extract(trace, group=group, var_names=var)
+
+        freqs_nd, welch_psds_nd  = signal.welch(
+            x=postpred_DataArray, axis=0,
+            fs=WELCH_FS,
+            nfft=WELCH_NFFT, detrend=WELCH_DETREND, scaling=WELCH_SCALING, average=WELCH_AVERAGE
+        )
+
+        welch_psds_dataset = xr.Dataset(
+            data_vars=dict(
+                power=(["freq", "sample"], welch_psds_nd)
+            ),
+            coords=dict(
+                freq=freqs_nd,
+                sample=range(1,postpred_DataArray.shape[1] + 1)
+            )
+        )
+
+        psd_median = welch_psds_dataset.median(dim="sample").to_array().to_numpy().flatten()
+        psd_q975 = welch_psds_dataset.quantile(q=0.975, dim="sample").to_array().to_numpy().flatten()
+        psd_q84 = welch_psds_dataset.quantile(q=0.84, dim="sample").to_array().to_numpy().flatten()
+        psd_q16 = welch_psds_dataset.quantile(q=0.16, dim="sample").to_array().to_numpy().flatten()
+        psd_q025 = welch_psds_dataset.quantile(q=0.025, dim="sample").to_array().to_numpy().flatten()
+
+        #ax.fill_between(freqs_nd, psd_q16, psd_q84, alpha=0.7, label=r"68% HDI")
+        #ax.fill_between(freqs_nd, psd_q025, psd_q975, alpha=0.5, label=r"95% HDI")
+        sns.rugplot(freqs_nd, height=0.025, ax=ax,  color='blue');
+        ax.loglog(freqs_nd, psd_median, lw=2, alpha=0.8, label=f"{var}")
+
+    ax.set_xlabel("Frequency of modulation (Hz)")
+    ax.set_ylabel(r"PSD (Jy$^2$ Hz)")
+    ax.set_title(f"Welch PSD")
     ax.legend()
 
 def fit_se_gp(path_to_csv, rng_seed=None):
@@ -488,6 +511,7 @@ def fit_gpSE_gpPer(path_to_csv, rng_seed=None):
     y_stderr_sd = np.nanstd(y_stderr)
     t = lc["mjd"].to_numpy()
     t_mingap = np.diff(t).min()
+    t_maxgap = np.diff(t).max()
     t_range = np.ptp(t)
 
     with pm.Model() as model:
@@ -499,7 +523,7 @@ def fit_gpSE_gpPer(path_to_csv, rng_seed=None):
         ell_SE = pm.InverseGamma("ell_SE", alpha=3, beta=8*math.ceil(t_mingap))
         ell_Per = pm.InverseGamma("ell_Per", alpha=3, beta=8*math.ceil(t_mingap))
 
-        T = pm.Uniform("T", lower=t_range/4, upper=t_range)
+        T = pm.Uniform("T", lower=4*t_mingap, upper=t_range/4)
 
         cov_SE = eta_SE * pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE)
         gp_SE = pm.gp.Marginal(cov_func=cov_SE)
@@ -510,7 +534,7 @@ def fit_gpSE_gpPer(path_to_csv, rng_seed=None):
         gp = gp_SE + gp_Per
 
         err_norm_dist = pm.Normal.dist(mu=y_stderr, sigma=y_stderr_sd)
-        sig = pm.Truncated("sig", err_norm_dist, lower=0, upper=None)
+        sig = pm.Truncated("sig", err_norm_dist, lower=y_stderr, upper=None)
         cov_noise = pm.gp.cov.WhiteNoise(sigma=sig)
 
         f = gp.marginal_likelihood(
@@ -556,46 +580,68 @@ def fit_gpSE_gpPer(path_to_csv, rng_seed=None):
         )
     return gpSE_gpPer_trace, gpSE_gpPer_dag
 
+def plot_lsp(trace, path_to_csv, group="prior_predictive", variable_name="f"):
 
+    this_lc = pd.read_csv(path_to_csv)
+    t = this_lc['mjd']
+    #y = this_lc['f_peak']
 
-def plot_welch_psds(trace, variable_names=("f_star", "f_star_SE", "f_star_M32")):
-    """Plot Welch approximated PSD of GP posterior predictive samples for each constituent kernel."""
+    pred_DataArray = az.extract(trace, group=group, var_names=variable_name)
+    freqs_f = np.geomspace(start=1e-5, stop=200, num=200)
 
-    fig = plt.figure(figsize=FIG_SIZE)
-    ax = fig.add_subplot(1,1,1)
+    n_pred_samples = pred_DataArray.shape[1]
+    n_freqs = freqs_f.shape[0]
 
-    for var in variable_names:
-        postpred_DataArray = az.extract(trace, "posterior_predictive", var_names=var)
+    pred_LSPs_np = np.ndarray((1, n_freqs, n_pred_samples))
 
-        freqs_nd, welch_psds_nd  = signal.welch(
-            x=postpred_DataArray, axis=0,
-            fs=1,
-            nfft=WELCH_NFFT, detrend=WELCH_DETREND, scaling=WELCH_SCALING, average=WELCH_AVERAGE
-        )
+    if group == "prior_predictive":
+        this_t = t
+    else:
+        this_t = np.linspace(
+            start=np.floor(t.min()),
+            stop=np.ceil(t.max()),
+            num = N_NEW
+        ).reshape(-1,1).flatten()
 
-        welch_psds_dataset = xr.Dataset(
+    for lc_index in range(n_pred_samples):
+
+        this_y = pred_DataArray[:, lc_index]
+
+        this_power = LombScargle(
+            t=this_t,
+            y=this_y,
+            dy=None,
+            fit_mean=False,
+            center_data=False,
+            normalization="psd"
+        ).power(freqs_f)
+
+        pred_LSPs_np[0, :, lc_index] = this_power
+
+        pred_LSPs_xr = xr.Dataset(
             data_vars=dict(
-                power=(["freq", "sample"], welch_psds_nd)
+                power=(["chain", "frequency", "draw"], pred_LSPs_np)
             ),
             coords=dict(
-                freq=freqs_nd,
-                sample=range(1,postpred_DataArray.shape[1] + 1)
+                chain=[0],
+                frequency=freqs_f,
+                draw=range(0, n_pred_samples)
             )
         )
 
-        psd_median = welch_psds_dataset.median(dim="sample").to_array().to_numpy().flatten()
-        psd_q975 = welch_psds_dataset.quantile(q=0.975, dim="sample").to_array().to_numpy().flatten()
-        psd_q84 = welch_psds_dataset.quantile(q=0.84, dim="sample").to_array().to_numpy().flatten()
-        psd_q16 = welch_psds_dataset.quantile(q=0.16, dim="sample").to_array().to_numpy().flatten()
-        psd_q025 = welch_psds_dataset.quantile(q=0.025, dim="sample").to_array().to_numpy().flatten()
+    # Intervals at each frequency
+    pred_LSP_q67 = az.hdi(ary=pred_LSPs_xr, hdi_prob=0.67)
+    pred_LSP_q95 = az.hdi(ary=pred_LSPs_xr, hdi_prob=0.95)
 
-        #ax.fill_between(freqs_nd, psd_q16, psd_q84, alpha=0.7, label=r"68% HDI")
-        #ax.fill_between(freqs_nd, psd_q025, psd_q975, alpha=0.5, label=r"95% HDI")
-        ax.loglog(freqs_nd, psd_median, lw=2, alpha=0.8, label=f"{var}")
+    pred_LSP_median = pred_LSPs_xr.median(dim="draw")['power'].to_numpy().flatten()
 
-    ax.set_xlabel("Frequency of modulation (Hz)")
-    ax.set_ylabel(r"PSD (Jy$^2$ Hz)")
-    ax.set_title(f"Welch PSD")
-    ax.legend()
-
-
+    fig = plt.figure(figsize=(12,5))
+    ax = fig.add_subplot(1,1,1)
+    plt.loglog(freqs_f, pred_LSP_median, "red", linewidth=2, label="Median of LSPs of $y_*$")
+    ax.fill_between(freqs_f, pred_LSP_q67['power'][:,0], pred_LSP_q67['power'][:,1], alpha=0.4, color="blue", label="LSP of $y_*$ 67% HDI")
+    ax.fill_between(freqs_f, pred_LSP_q95['power'][:,0], pred_LSP_q95['power'][:,1], alpha=0.1, color="blue", label="LSP of $y_*$ 95% HDI")
+    sns.rugplot(freqs_f, height=0.025, ax=ax,  color='red')
+    plt.xlabel("Frequency")
+    plt.ylabel("Power")
+    plt.title(f"LSP of {group}")
+    plt.legend()
