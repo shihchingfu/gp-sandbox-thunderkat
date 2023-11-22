@@ -1,24 +1,39 @@
 digraph {
-	ell_M32 [label="ell_M32
+	subgraph "clusterobs_id (21)" {
+		y_stderr [label="y_stderr
 ~
-InvGamma" shape=ellipse]
+ConstantData" shape=box style="rounded, filled"]
+		t [label="t
+~
+ConstantData" shape=box style="rounded, filled"]
+		label="obs_id (21)" labeljust=r labelloc=b style=rounded
+	}
+	subgraph cluster300 {
+		t_star [label="t_star
+~
+ConstantData" shape=box style="rounded, filled"]
+		label=300 labeljust=r labelloc=b style=rounded
+	}
 	eta [label="eta
 ~
 TruncatedNormal" shape=ellipse]
+	ell_M32 [label="ell_M32
+~
+InvGamma" shape=ellipse]
 	ell_SE [label="ell_SE
 ~
 InvGamma" shape=ellipse]
 	subgraph cluster21 {
-		y [label="y
-~
-MvNormal" shape=ellipse style=filled]
 		sig [label="sig
 ~
 TruncatedNormal" shape=ellipse]
+		y [label="y
+~
+MvNormal" shape=ellipse style=filled]
 		label=21 labeljust=r labelloc=b style=rounded
 	}
-	ell_M32 -> y
-	eta -> y
-	ell_SE -> y
 	sig -> y
+	eta -> y
+	ell_M32 -> y
+	ell_SE -> y
 }

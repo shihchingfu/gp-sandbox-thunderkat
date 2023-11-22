@@ -1,4 +1,19 @@
 digraph {
+	subgraph "clusterobs_id (21)" {
+		y_stderr [label="y_stderr
+~
+ConstantData" shape=box style="rounded, filled"]
+		t [label="t
+~
+ConstantData" shape=box style="rounded, filled"]
+		label="obs_id (21)" labeljust=r labelloc=b style=rounded
+	}
+	subgraph cluster300 {
+		t_star [label="t_star
+~
+ConstantData" shape=box style="rounded, filled"]
+		label=300 labeljust=r labelloc=b style=rounded
+	}
 	ell_M32 [label="ell_M32
 ~
 InvGamma" shape=ellipse]
@@ -6,15 +21,15 @@ InvGamma" shape=ellipse]
 ~
 TruncatedNormal" shape=ellipse]
 	subgraph cluster21 {
-		sig_M32 [label="sig_M32
-~
-TruncatedNormal" shape=ellipse]
 		y [label="y
 ~
 MvNormal" shape=ellipse style=filled]
+		sig_M32 [label="sig_M32
+~
+TruncatedNormal" shape=ellipse]
 		label=21 labeljust=r labelloc=b style=rounded
 	}
-	sig_M32 -> y
 	ell_M32 -> y
 	eta_M32 -> y
+	sig_M32 -> y
 }
