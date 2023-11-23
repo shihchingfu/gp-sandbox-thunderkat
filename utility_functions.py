@@ -155,7 +155,7 @@ def plot_welch_psd(trace, group="posterior_predictive", variable_name="f_star"):
     pred_DataArray = az.extract(trace, group=group, var_names=variable_name)
 
     freqs_nd, welch_psds_nd  = signal.welch(
-        x=pred_DataArray, axis=0,
+        x=pred_DataArray, axis=,
         fs=WELCH_FS,
         nperseg=WELCH_NPERSEG,
         nfft=WELCH_NFFT,
