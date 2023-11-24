@@ -18,10 +18,10 @@ N_NEW = 300 # No. observation points in each posterior predictive sample
 
 FIG_SIZE = (10,6)
 
-WELCH_FS=1
-WELCH_NPERSEG=None
+WELCH_FS=1.0
+WELCH_NPERSEG=256
 WELCH_NOVERLAP=None
-WELCH_NFFT=None
+WELCH_NFFT=512
 WELCH_DETREND=False
 WELCH_SCALING="density"
 WELCH_AVERAGE="median"
@@ -155,7 +155,7 @@ def plot_welch_psd(trace, group="posterior_predictive", variable_name="f_star"):
     pred_DataArray = az.extract(trace, group=group, var_names=variable_name)
 
     freqs_nd, welch_psds_nd  = signal.welch(
-        x=pred_DataArray, axis=,
+        x=pred_DataArray, axis=0,
         fs=WELCH_FS,
         nperseg=WELCH_NPERSEG,
         nfft=WELCH_NFFT,
@@ -257,7 +257,7 @@ def plot_lsp(trace, group="posterior_predictive", variable_name="f_star"):
             t=this_t,
             y=this_y,
             dy=None,
-            fit_mean=False,
+            fit_mean=True,
             center_data=False,
             normalization="psd"
         ).power(freqs_f)
