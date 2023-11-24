@@ -1,31 +1,34 @@
 digraph {
 	subgraph "clusterobs_id (28)" {
-		t [label="t
+		y_stderr [label="y_stderr
 ~
 ConstantData" shape=box style="rounded, filled"]
-		y_stderr [label="y_stderr
+		t [label="t
 ~
 ConstantData" shape=box style="rounded, filled"]
 		label="obs_id (28)" labeljust=r labelloc=b style=rounded
 	}
-	subgraph cluster300 {
+	subgraph cluster200 {
 		t_star [label="t_star
 ~
 ConstantData" shape=box style="rounded, filled"]
-		label=300 labeljust=r labelloc=b style=rounded
+		label=200 labeljust=r labelloc=b style=rounded
 	}
-	ell_Per [label="ell_Per
-~
-InvGamma" shape=ellipse]
-	eta_Per [label="eta_Per
-~
-TruncatedNormal" shape=ellipse]
 	T [label="T
 ~
 Uniform" shape=ellipse]
+	eta_Per [label="eta_Per
+~
+TruncatedNormal" shape=ellipse]
+	sig [label="sig
+~
+TruncatedNormal" shape=ellipse]
 	eta_SE [label="eta_SE
 ~
 TruncatedNormal" shape=ellipse]
+	ell_Per [label="ell_Per
+~
+InvGamma" shape=ellipse]
 	ell_SE [label="ell_SE
 ~
 InvGamma" shape=ellipse]
@@ -33,15 +36,12 @@ InvGamma" shape=ellipse]
 		y [label="y
 ~
 MvNormal" shape=ellipse style=filled]
-		sig [label="sig
-~
-TruncatedNormal" shape=ellipse]
 		label=28 labeljust=r labelloc=b style=rounded
 	}
+	sig -> y
+	T -> y
 	eta_SE -> y
 	ell_Per -> y
-	ell_SE -> y
-	sig -> y
 	eta_Per -> y
-	T -> y
+	ell_SE -> y
 }
