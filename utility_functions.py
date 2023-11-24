@@ -11,12 +11,18 @@ from scipy import signal
 import seaborn as sns
 from astropy.timeseries import LombScargle
 
+print(f"Running on PyMC v{pm.__version__}")
+
 N_DRAWS = 1000
 N_TUNE = 2000
 N_PPC = N_DRAWS # No. prior predictive samples
-N_NEW = 300 # No. observation points in each posterior predictive sample
+N_NEW = 200 # No. observation points in each posterior predictive sample
 
 FIG_SIZE = (10,6)
+
+LSP_FITMEAN = True
+LSP_CENTER_DATA = False
+LSP_NORMALIZATION = "standard"
 
 WELCH_FS=1.0
 WELCH_NPERSEG=256
@@ -39,8 +45,9 @@ def plot_lc(path_to_csv):
     plt.plot(this_x, this_y, "_b", ms=8, alpha=1, label="Observed data")
     plt.axhline(y=mean_y, c='blue', ls=':')
     plt.errorbar(x=this_x, y=this_y, yerr=this_yerr,
-                 fmt="none", ecolor="k", elinewidth=1, capsize=3,
+                 fmt="none", ecolor="red", elinewidth=1, capsize=3,
                  label=r"1 $\sigma$")
+    sns.rugplot(this_x, height=0.025, color='red')
     plt.title(f"{path_to_csv.stem} (N={len(this_y)})")
     plt.xlabel("Time")
     plt.ylabel("Flux")
@@ -226,9 +233,9 @@ def plot_welch_psds(trace, group="posterior_predictive", variable_names=("f_star
         #psd_q16 = welch_psds_dataset.quantile(q=0.16, dim="sample").to_array().to_numpy().flatten()
         #psd_q025 = welch_psds_dataset.quantile(q=0.025, dim="sample").to_array().to_numpy().flatten()
 
-        sns.rugplot(freqs_nd, height=0.025, ax=ax,  color='blue');
         ax.loglog(freqs_nd, psd_median, lw=2, alpha=0.8, label=f"{var}")
 
+    sns.rugplot(freqs_nd, height=0.025, ax=ax,  color='blue');
     ax.set_xlabel("Frequency of modulation (Hz)")
     ax.set_ylabel(r"PSD (Jy$^2$ Hz)")
     ax.set_title(f"Welch PSD ({trace.constant_data.attrs['csv_filename']})")
@@ -237,12 +244,12 @@ def plot_welch_psds(trace, group="posterior_predictive", variable_names=("f_star
 def plot_lsp(trace, group="posterior_predictive", variable_name="f_star"):
 
     pred_DataArray = az.extract(trace, group=group, var_names=variable_name)
-    freqs_f = np.geomspace(start=1e-4, stop=100, num=200)
+    freqs_f = np.geomspace(start=1e-4, stop=1, num=200)
 
     n_pred_samples = pred_DataArray.shape[1]
     n_freqs = freqs_f.shape[0]
 
-    pred_LSPs_np = np.ndarray((1, n_freqs, n_pred_samples))
+    pred_LSPs_np = np.ndarray((n_freqs, n_pred_samples))
 
     if group == "prior_predictive":
         this_t = trace.constant_data.t
@@ -257,23 +264,31 @@ def plot_lsp(trace, group="posterior_predictive", variable_name="f_star"):
             t=this_t,
             y=this_y,
             dy=None,
-            fit_mean=True,
-            center_data=False,
-            normalization="psd"
+            fit_mean=LSP_FITMEAN,
+            center_data=LSP_CENTER_DATA,
+            normalization=LSP_NORMALIZATION
         ).power(freqs_f)
 
-        pred_LSPs_np[0, :, lc_index] = this_power
+        pred_LSPs_np[:, lc_index] = this_power
 
     pred_LSPs_xr = xr.Dataset(
         data_vars=dict(
-            power=(["chain", "frequency", "draw"], pred_LSPs_np)
+            power=(["frequency", "draw"], pred_LSPs_np)
         ),
         coords=dict(
-            chain=[0],
             frequency=freqs_f,
             draw=range(0, n_pred_samples)
         )
     )
+
+    obs_power = LombScargle(
+        t=trace.constant_data.t,
+        y=trace.observed_data.y,
+        dy=None,
+        fit_mean=LSP_FITMEAN,
+        center_data=LSP_CENTER_DATA,
+        normalization=LSP_NORMALIZATION
+    ).power(freqs_f)
 
     psd_median = pred_LSPs_xr.median(dim="draw").to_array().to_numpy().flatten()
     psd_q975 = pred_LSPs_xr.quantile(q=0.975, dim="draw").to_array().to_numpy().flatten()
@@ -287,6 +302,7 @@ def plot_lsp(trace, group="posterior_predictive", variable_name="f_star"):
     ax.fill_between(freqs_f, psd_q16, psd_q84, alpha=0.7, color="blue", label=r"68% HDI")
     ax.fill_between(freqs_f, psd_q025, psd_q975, alpha=0.5, color="blue", label=r"95% HDI")
     ax.loglog(freqs_f, psd_median, lw=2,color="red", alpha=0.8, label=r"Median")
+    ax.loglog(freqs_f, obs_power, lw=2,color="pink", alpha=0.8, label=r"Data")
     ax.set_xlabel("Frequency")
     ax.set_ylabel(r"Power")
     ax.set_title(f"LSP of {group} ({trace.constant_data.attrs['csv_filename']})")
@@ -300,20 +316,21 @@ def fit_se_gp(path_to_csv, rng_seed=None):
     y_stderr = lc["f_peak_err"].to_numpy()
     t = lc["mjd"].to_numpy()
 
+    y_stderr_mean = np.nanmean(y_stderr)
     y_stderr_sd = np.nanstd(y_stderr)
     t_mingap = np.diff(t).min()
 
-    t_new = np.linspace(
+    t_star = np.linspace(
         start=np.floor(t.min()),
         stop=np.ceil(t.max()),
         num = N_NEW
     )
 
-    coords = {"t": t, "t_star": t_new}
+    coords = {"t": t, "t_star": t_star}
 
     with pm.Model(coords=coords) as model:
         t_ = pm.ConstantData("t", t, dims="obs_id")
-        t_star_ = pm.ConstantData("t_star", t_new)
+        t_star_ = pm.ConstantData("t_star", t_star)
         y_stderr_ = pm.ConstantData("y_stderr", y_stderr, dims="obs_id")
 
         std_norm_dist = pm.Normal.dist(mu=0.0, sigma=1.0)
@@ -324,15 +341,14 @@ def fit_se_gp(path_to_csv, rng_seed=None):
         cov_func = eta_SE * pm.gp.cov.ExpQuad(input_dim=1, ls=ell_SE)
         gp = pm.gp.Marginal(cov_func=cov_func) # zero mean function
 
-        err_norm_dist = pm.Normal.dist(mu=y_stderr, sigma=y_stderr_sd)
-        sig_SE = pm.Truncated("sig", err_norm_dist, lower=0, upper=None)
-        cov_noise = pm.gp.cov.WhiteNoise(sigma=sig_SE)
+        err_norm_dist = pm.Normal.dist(mu=y_stderr_mean, sigma=y_stderr_sd)
+        sig = pm.Truncated("sig", err_norm_dist, lower=0, upper=None)
 
         y_ = gp.marginal_likelihood(
             "y", 
             X=t.reshape(-1,1),
             y=y.reshape(-1,1).flatten(),
-            sigma=cov_noise,
+            sigma=sig,
             jitter=1e-6,
         )
 
@@ -352,16 +368,21 @@ def fit_se_gp(path_to_csv, rng_seed=None):
         )
 
         f_star = gp.conditional(name="f_star",
-                                Xnew=t_new.reshape(-1,1),
+                                Xnew=t_star.reshape(-1,1),
                                 jitter=1e-6,
                                 pred_noise=False)
 
+        y_star = gp.conditional(name="y_star",
+                                Xnew=t_star.reshape(-1,1),
+                                jitter=1e-6,
+                                pred_noise=True)
+
         se_trace.extend(
             pm.sample_posterior_predictive(
-                se_trace.posterior,
-                var_names=["f_star"],
+                se_trace,
+                var_names=["f_star", "y_star"],
                 random_seed=rng_seed,
-                idata_kwargs={"dims": {"f_star": ["t_star"]}}
+                idata_kwargs={"dims": {"f_star": ["t_star"], "y_star": ["t_star"]}}
             )
         )
         se_trace.constant_data = se_trace.constant_data.assign_attrs(csv_filename=path_to_csv.stem)
@@ -376,6 +397,7 @@ def fit_m32_gp(path_to_csv, rng_seed=None):
     y_stderr = lc["f_peak_err"].to_numpy()
     t = lc["mjd"].to_numpy()
 
+    y_stderr_mean = np.nanmean(y_stderr)
     y_stderr_sd = np.nanstd(y_stderr)
     t_mingap = np.diff(t).min()
 
@@ -400,19 +422,18 @@ def fit_m32_gp(path_to_csv, rng_seed=None):
         cov_func = eta_M32 * pm.gp.cov.Matern32(input_dim=1, ls=ell_M32)
         gp = pm.gp.Marginal(cov_func=cov_func) # zero mean function
 
-        err_norm_dist = pm.Normal.dist(mu=y_stderr, sigma=y_stderr_sd)
-        sig_M32 = pm.Truncated("sig_M32", err_norm_dist, lower=0, upper=None)
-        cov_noise = pm.gp.cov.WhiteNoise(sigma=sig_M32)
+        err_norm_dist = pm.Normal.dist(mu=y_stderr_mean, sigma=y_stderr_sd)
+        sig = pm.Truncated("sig", err_norm_dist, lower=0, upper=None)
 
         y_ = gp.marginal_likelihood(
             "y",
             X=t.reshape(-1,1),
             y=y.reshape(-1,1).flatten(),
-            sigma=cov_noise
+            sigma=sig
         )
 
         m32_dag = pm.model_to_graphviz(model)
-        m32_trace = pm.sample_prior_predictive(samples=N_PPC, 
+        m32_trace = pm.sample_prior_predictive(samples=N_PPC,
                                                random_seed=rng_seed,
                                                idata_kwargs={"dims": {"y": ["t"]}})
 
@@ -422,8 +443,7 @@ def fit_m32_gp(path_to_csv, rng_seed=None):
                 tune=N_TUNE,
                 chains=4,
                 cores=4,
-                random_seed=rng_seed,
-                idata_kwargs={"dims": {"f_star": ["t_star"]}}
+                random_seed=rng_seed
             )
         )
 
@@ -431,12 +451,18 @@ def fit_m32_gp(path_to_csv, rng_seed=None):
                                 Xnew=t_new.reshape(-1,1),
                                 jitter=1e-6,
                                 pred_noise=False)
+        
+        y_star = gp.conditional(name="y_star",
+                                Xnew=t_new.reshape(-1,1),
+                                jitter=1e-6,
+                                pred_noise=True)
 
         m32_trace.extend(
             pm.sample_posterior_predictive(
-                m32_trace.posterior,
-                var_names=["f_star"],
-                random_seed=rng_seed
+                m32_trace,
+                var_names=["f_star", "y_star"],
+                random_seed=rng_seed,
+                idata_kwargs={"dims": {"f_star": ["t_star"], "y_star": ["t_star"]}}
             )
         )
         m32_trace.constant_data = m32_trace.constant_data.assign_attrs(csv_filename=path_to_csv.stem)
@@ -451,6 +477,7 @@ def fit_se_m32_gp(path_to_csv, multiplicative_kernel=False, rng_seed=None):
     y_stderr = lc["f_peak_err"].to_numpy()
     t = lc["mjd"].to_numpy()
 
+    y_stderr_mean = np.nanmean(y_stderr)
     y_stderr_sd = np.nanstd(y_stderr)
     t_mingap = np.diff(t).min()
 
@@ -482,15 +509,14 @@ def fit_se_m32_gp(path_to_csv, multiplicative_kernel=False, rng_seed=None):
 
         gp = pm.gp.Marginal(cov_func=cov_func) # zero mean function
 
-        err_norm_dist = pm.Normal.dist(mu=y_stderr, sigma=y_stderr_sd)
+        err_norm_dist = pm.Normal.dist(mu=y_stderr_mean, sigma=y_stderr_sd)
         sig = pm.Truncated("sig", err_norm_dist, lower=0, upper=None)
-        cov_noise = pm.gp.cov.WhiteNoise(sigma=sig)
 
         y_ = gp.marginal_likelihood(
             "y",
             X=t.reshape(-1,1),
             y=y.reshape(-1,1).flatten(),
-            sigma=cov_noise
+            sigma=sig
         )
 
         sem32_dag = pm.model_to_graphviz(model)
@@ -504,8 +530,7 @@ def fit_se_m32_gp(path_to_csv, multiplicative_kernel=False, rng_seed=None):
                 tune=N_TUNE,
                 chains=4,
                 cores=4,
-                random_seed=rng_seed,
-                idata_kwargs={"dims": {"f_star": ["t_star"]}}
+                random_seed=rng_seed
             )
         )
 
@@ -514,11 +539,18 @@ def fit_se_m32_gp(path_to_csv, multiplicative_kernel=False, rng_seed=None):
                                 jitter=1e-6,
                                 pred_noise=False)
 
+        y_star = gp.conditional(name="y_star",
+                                Xnew=t_new.reshape(-1,1),
+                                jitter=1e-6,
+                                pred_noise=False)
+
+
         sem32_trace.extend(
             pm.sample_posterior_predictive(
-                sem32_trace.posterior,
-                var_names=["f_star"],
-                random_seed=rng_seed
+                sem32_trace,
+                var_names=["f_star", "y_star"],
+                random_seed=rng_seed,
+                idata_kwargs={"dims": {"f_star": ["t_star"], "y_star": ["t_star"]}}
             )
         )
         sem32_trace.constant_data = sem32_trace.constant_data.assign_attrs(csv_filename=path_to_csv.stem)
@@ -533,6 +565,7 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
     y_stderr = lc["f_peak_err"].to_numpy()
     t = lc["mjd"].to_numpy()
 
+    y_stderr_mean = np.nanmean(y_stderr)
     y_stderr_sd = np.nanstd(y_stderr)
     t_mingap = np.diff(t).min()
 
@@ -543,7 +576,6 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
     )
 
     coords = {"t": t, "t_star": t_new}
-
     with pm.Model(coords=coords) as model:
         t_ = pm.ConstantData("t", t, dims="obs_id")
         t_star_ = pm.ConstantData("t_star", t_new)
@@ -564,15 +596,14 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
 
         gp = gp_SE + gp_M32
 
-        err_norm_dist = pm.Normal.dist(mu=y_stderr, sigma=y_stderr_sd)
+        err_norm_dist = pm.Normal.dist(mu=y_stderr_mean, sigma=y_stderr_sd)
         sig = pm.Truncated("sig", err_norm_dist, lower=0, upper=None)
-        cov_noise = pm.gp.cov.WhiteNoise(sigma=sig)
 
         y_ = gp.marginal_likelihood(
             "y",
             X=t.reshape(-1,1),
             y=y.reshape(-1,1).flatten(),
-            sigma=cov_noise
+            sigma=sig
         )
 
         gpSE_gpM32_dag = pm.model_to_graphviz(model)
@@ -586,8 +617,7 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
                 tune=N_TUNE,
                 chains=4,
                 cores=4,
-                random_seed=rng_seed,
-                idata_kwargs={"dims": {"f_star": ["t_star"]}}
+                random_seed=rng_seed
             )
         )
 
@@ -601,12 +631,18 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
                                 Xnew=t_new.reshape(-1,1),
                                 jitter=1e-6,
                                 pred_noise=False)
+        
+        y_star = gp.conditional(name="y_star",
+                                Xnew=t_new.reshape(-1,1),
+                                jitter=1e-6,
+                                pred_noise=True)
 
         gpSE_gpM32_trace.extend(
             pm.sample_posterior_predictive(
-                gpSE_gpM32_trace.posterior,
-                var_names=["f_star", "f_star_SE", "f_star_M32"],
-                random_seed=rng_seed
+                gpSE_gpM32_trace,
+                var_names=["f_star", "f_star_SE", "f_star_M32", "y_star"],
+                random_seed=rng_seed,
+                idata_kwargs={"dims": {"f_star": ["t_star"], "f_star_SE": ["t_star"], "f_star_M32": ["t_star"], "y_star": ["t_star"]}}
             )
         )
         gpSE_gpM32_trace.constant_data = gpSE_gpM32_trace.constant_data.assign_attrs(csv_filename=path_to_csv.stem)
@@ -621,6 +657,7 @@ def fit_gpSE_gpPer(path_to_csv, rng_seed=None):
     y_stderr = lc["f_peak_err"].to_numpy()
     t = lc["mjd"].to_numpy()
 
+    y_stderr_mean = np.nanmean(y_stderr)
     y_stderr_sd = np.nanstd(y_stderr)
     t_mingap = np.diff(t).min()
     t_range = np.ptp(t)
@@ -654,15 +691,14 @@ def fit_gpSE_gpPer(path_to_csv, rng_seed=None):
 
         gp = gp_SE + gp_Per
 
-        err_norm_dist = pm.Normal.dist(mu=y_stderr, sigma=y_stderr_sd)
-        sig = pm.Truncated("sig", err_norm_dist, lower=y_stderr, upper=None)
-        cov_noise = pm.gp.cov.WhiteNoise(sigma=sig)
+        err_norm_dist = pm.Normal.dist(mu=y_stderr_mean, sigma=y_stderr_sd)
+        sig = pm.Truncated("sig", err_norm_dist, lower=0, upper=None)
 
         y_ = gp.marginal_likelihood(
             "y",
             X=t.reshape(-1,1),
             y=y.reshape(-1,1).flatten(),
-            sigma=cov_noise
+            sigma=sig
         )
 
         gpSE_gpPer_dag = pm.model_to_graphviz(model)
@@ -676,8 +712,7 @@ def fit_gpSE_gpPer(path_to_csv, rng_seed=None):
                 tune=N_TUNE,
                 chains=4,
                 cores=4,
-                random_seed=rng_seed,
-                idata_kwargs={"dims": {"f_star": ["t_star"]}}
+                random_seed=rng_seed
             )
         )
 
@@ -689,14 +724,20 @@ def fit_gpSE_gpPer(path_to_csv, rng_seed=None):
 
         f_star = gp.conditional(name="f_star",
                                 Xnew=t_new.reshape(-1,1),
-                                 jitter=1e-6,
-                                 pred_noise=False)
+                                jitter=1e-6,
+                                pred_noise=False)
+
+        y_star = gp.conditional(name="y_star",
+                                Xnew=t_new.reshape(-1,1),
+                                jitter=1e-6,
+                                pred_noise=True)
 
         gpSE_gpPer_trace.extend(
             pm.sample_posterior_predictive(
-                gpSE_gpPer_trace.posterior,
-                var_names=["f_star", "f_star_SE", "f_star_Per"],
-                random_seed=rng_seed
+                gpSE_gpPer_trace,
+                var_names=["f_star", "f_star_SE", "f_star_Per", "y_star"],
+                random_seed=rng_seed,
+                idata_kwargs={"dims": {"f_star": ["t_star"], "f_star_SE": ["t_star"], "f_star_Per": ["t_star"], "y_star": ["t_star"]}}
             )
         )
         gpSE_gpPer_trace.constant_data = gpSE_gpPer_trace.constant_data.assign_attrs(csv_filename=path_to_csv.stem)
