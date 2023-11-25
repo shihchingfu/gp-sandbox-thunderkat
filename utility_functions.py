@@ -96,6 +96,7 @@ def plot_postpred_samples(trace, variable_name="f_star"):
         plot_samples=False
     )
     plt.plot(this_xnew.flatten(), y_postpred_median, "y", linewidth=1, label="Median")
+    sns.rugplot(this_xnew, height=0.025, color='red')
     plt.title(f"{variable_name} ({trace.constant_data.attrs['csv_filename']})")
     plt.xlabel("Time")
     plt.ylabel("Flux")

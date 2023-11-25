@@ -8,28 +8,28 @@ ConstantData" shape=box style="rounded, filled"]
 ConstantData" shape=box style="rounded, filled"]
 		label="obs_id (21)" labeljust=r labelloc=b style=rounded
 	}
-	subgraph cluster300 {
+	subgraph cluster200 {
 		t_star [label="t_star
 ~
 ConstantData" shape=box style="rounded, filled"]
-		label=300 labeljust=r labelloc=b style=rounded
+		label=200 labeljust=r labelloc=b style=rounded
 	}
-	eta_SE [label="eta_SE
-~
-TruncatedNormal" shape=ellipse]
 	ell_SE [label="ell_SE
 ~
 InvGamma" shape=ellipse]
-	subgraph cluster21 {
-		sig [label="sig
+	eta_SE [label="eta_SE
 ~
 TruncatedNormal" shape=ellipse]
+	sig [label="sig
+~
+TruncatedNormal" shape=ellipse]
+	subgraph cluster21 {
 		y [label="y
 ~
 MvNormal" shape=ellipse style=filled]
 		label=21 labeljust=r labelloc=b style=rounded
 	}
+	ell_SE -> y
 	eta_SE -> y
 	sig -> y
-	ell_SE -> y
 }
