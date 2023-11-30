@@ -411,7 +411,7 @@ def fit_se_gp(path_to_csv, rng_seed=None):
 
     y_stderr_mean = np.nanmean(y_stderr)
     y_stderr_sd = np.nanstd(y_stderr)
-    t_mingap = np.diff(t).min()
+    t_mingap = np.diff(np.sort(t)).min()
 
     t_star = np.linspace(
         start=np.floor(t.min()),
@@ -492,7 +492,7 @@ def fit_m32_gp(path_to_csv, rng_seed=None):
 
     y_stderr_mean = np.nanmean(y_stderr)
     y_stderr_sd = np.nanstd(y_stderr)
-    t_mingap = np.diff(t).min()
+    t_mingap = np.diff(np.sort(t)).min()
 
     t_new = np.linspace(
         start=np.floor(t.min()),
@@ -572,7 +572,7 @@ def fit_se_m32_gp(path_to_csv, multiplicative_kernel=False, rng_seed=None):
 
     y_stderr_mean = np.nanmean(y_stderr)
     y_stderr_sd = np.nanstd(y_stderr)
-    t_mingap = np.diff(t).min()
+    t_mingap = np.diff(np.sort(t)).min()
 
     t_new = np.linspace(
         start=np.floor(t.min()),
@@ -660,7 +660,7 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
 
     y_stderr_mean = np.nanmean(y_stderr)
     y_stderr_sd = np.nanstd(y_stderr)
-    t_mingap = np.diff(t).min()
+    t_mingap = np.diff(np.sort(t)).min()
 
     t_new = np.linspace(
         start=np.floor(t.min()),
@@ -760,7 +760,7 @@ def fit_gpSE_gpPer(path_to_csv, standardise_y=False, rng_seed=None):
 
     #y_stderr_mean = np.nanmean(y_stderr)
     #y_stderr_sd = np.nanstd(y_stderr)
-    t_mingap = np.diff(t).min()
+    t_mingap = np.diff(np.sort(t)).min()
     t_range = np.ptp(t)
 
     t_star = np.linspace(
