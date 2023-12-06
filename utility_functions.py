@@ -18,7 +18,7 @@ N_TUNE = 2000
 N_PPC = N_DRAWS # No. prior predictive samples
 N_NEW = 200 # No. observation points in each posterior predictive sample
 
-FIG_SIZE = (10,5)
+FIG_SIZE = (10,4.5)
 
 LSP_FITMEAN = True
 LSP_CENTER_DATA = False
@@ -39,22 +39,22 @@ def plot_lc(path_to_csv, plot_mean=False, show_title=False, show_legend=False, s
 
     this_lc = pd.read_csv(path_to_csv)
     this_x = this_lc['mjd']
-    this_y = this_lc['f_peak']
-    this_yerr = this_lc['f_peak_err']
+    this_y = this_lc['f_peak']*1000
+    this_yerr = this_lc['f_peak_err']*1000
     mean_y = np.nanmean(this_y)
 
     fig = plt.figure(figsize=FIG_SIZE)
-    plt.plot(this_x, this_y, "_b", ms=8, alpha=1, label="Observed data")
+    plt.plot(this_x, this_y, "ob", ms=4, alpha=1, label="Observed data")
     if plot_mean:
-        plt.axhline(y=mean_y, c='blue', ls=':')
+        plt.axhline(y=mean_y, c='gray', ls=':')
     plt.errorbar(x=this_x, y=this_y, yerr=this_yerr,
-                 fmt="none", ecolor="red", elinewidth=1, capsize=3,
+                 fmt="none", ecolor="k", elinewidth=1, capsize=3,
                  label=r"1 $\sigma$")
-    sns.rugplot(this_x, height=0.025, color='red')
+    sns.rugplot(this_x, height=0.025, color='b')
     if show_title:
         plt.title(f"{path_to_csv.stem} (N={len(this_y)})")
     plt.xlabel("Time (MJD)")
-    plt.ylabel("Flux Density (Jy)")
+    plt.ylabel("Flux Density (mJy)")
     if show_legend:
         plt.legend()
 
@@ -106,7 +106,7 @@ def plot_postpred_samples(trace, variable_name="f_star", show_title=False, show_
         plot_samples=False
     )
     plt.plot(this_xnew.flatten(), y_postpred_median, "y", linewidth=1, label="Median")
-    sns.rugplot(this_xnew, height=0.025, color='red')
+    sns.rugplot(this_xnew, height=0.025, color='r')
     if show_title:
         plt.title(f"{variable_name} ({csv_filename})")
     plt.xlabel("Time")
@@ -204,7 +204,7 @@ def plot_welch_psd(trace, group="posterior_predictive", variable_name="f_star", 
 
     fig = plt.figure(figsize=FIG_SIZE)
     ax = fig.add_subplot(1,1,1)
-    sns.rugplot(freqs_nd, height=0.025, ax=ax,  color='red')
+    sns.rugplot(freqs_nd, height=0.025, ax=ax,  color='r')
     ax.fill_between(freqs_nd, psd_q16, psd_q84, alpha=0.7, color="blue", label=r"68% HDI")
     ax.fill_between(freqs_nd, psd_q025, psd_q975, alpha=0.5, color="blue", label=r"95% HDI")
     ax.loglog(freqs_nd, psd_median, lw=2,color="red", alpha=0.8, label=r"Median")
@@ -313,7 +313,7 @@ def plot_lsp(trace, group="posterior_predictive", variable_name="f_star", show_t
     fig = plt.figure(figsize=FIG_SIZE)
     ax = fig.add_subplot(1,1,1)
     ax.loglog(freqs_f, obs_power, lw=2,color="gray", alpha=0.8, label=r"Data")
-    sns.rugplot(freqs_f, height=0.025, ax=ax,  color='red')
+    sns.rugplot(freqs_f, height=0.025, ax=ax,  color='r')
     ax.fill_between(freqs_f, psd_q16, psd_q84, alpha=0.7, color="blue", label=r"68% HDI")
     ax.fill_between(freqs_f, psd_q025, psd_q975, alpha=0.5, color="blue", label=r"95% HDI")
     ax.loglog(freqs_f, psd_median, lw=2,color="red", alpha=0.8, label=r"Median")
