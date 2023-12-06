@@ -18,11 +18,13 @@ N_TUNE = 2000
 N_PPC = N_DRAWS # No. prior predictive samples
 N_NEW = 200 # No. observation points in each posterior predictive sample
 
+THINNING_FACTOR = 5
+
 FIG_SIZE = (10,4.5)
 
 LSP_FITMEAN = True
 LSP_CENTER_DATA = False
-LSP_NORMALIZATION = "standard"
+LSP_NORMALIZATION = "psd"
 
 WELCH_FS=1.0
 WELCH_NPERSEG=256
@@ -147,7 +149,7 @@ def plot_post_cnr(trace, variable_names=None):
         group="posterior",
         var_names=variable_names,
         marginals=True,
-        figsize=(6,6),
+        figsize=(8,8),
         textsize=14,
         kind=["scatter"],
         scatter_kwargs={"alpha":0.1}
@@ -324,6 +326,8 @@ def plot_lsp(trace, group="posterior_predictive", variable_name="f_star", show_t
         ax.set_title(f"LSP of {group} ({trace.constant_data.attrs['csv_filename']})")
     ax.legend()
 
+    return freqs_f, psd_median
+
 def plot_lsps(trace, group="posterior_predictive", variable_names=["f_star_SE", "f_star_Per", "f_star"], show_title=False):
     """Plot Lomb-Scargle periodogram of posterior predictive samples for each constituent kernel."""
 
@@ -347,7 +351,6 @@ def plot_lsps(trace, group="posterior_predictive", variable_names=["f_star_SE", 
     for col, var in zip(PLOT_COLOURS, variable_names):
 
         pred_DataArray = az.extract(trace, group=group, var_names=var)
-        
 
         n_pred_samples = pred_DataArray.shape[1]
         n_freqs = freqs_f.shape[0]
@@ -763,10 +766,15 @@ def fit_gpSE_gpPer(path_to_csv, standardise_y=False, rng_seed=None):
     t_mingap = np.diff(np.sort(t)).min()
     t_range = np.ptp(t)
 
-    t_star = np.linspace(
+    # t_star = np.linspace(
+    #     start=np.floor(t.min()),
+    #     stop=np.ceil(t.max()),
+    #     num = N_NEW
+    # )
+
+    t_star = np.arange(
         start=np.floor(t.min()),
         stop=np.ceil(t.max()),
-        num = N_NEW
     )
 
     coords = {"t": t, "t_star": t_star}
@@ -828,9 +836,11 @@ def fit_gpSE_gpPer(path_to_csv, standardise_y=False, rng_seed=None):
 
         #y_star = gp.conditional(name="y_star", Xnew=t_star.reshape(-1,1), jitter=1e-6, pred_noise=True)
 
+        thinned_idata = gpSE_gpPer_trace.sel(draw=slice(None, None, THINNING_FACTOR))
+
         gpSE_gpPer_trace.extend(
             pm.sample_posterior_predictive(
-                gpSE_gpPer_trace,
+                thinned_idata,
                 var_names=["f_star", "f_star_SE", "f_star_Per"],#, "y_star"],
                 random_seed=rng_seed,
                 idata_kwargs={"dims": {"f_star": ["t_star"], "f_star_SE": ["t_star"], "f_star_Per": ["t_star"]}}#, "y_star": ["t_star"]}}
