@@ -97,7 +97,7 @@ def plot_postpred_samples(trace, variable_name="f_star", show_title=False, show_
 
     fig = plt.figure(figsize=FIG_SIZE)
     axes = fig.gca()
-    plt.plot(this_x, this_y, "_b", ms=8, alpha=1, label="Observed data")
+    plt.plot(this_x, this_y, "ob", ms=4, alpha=1, label="Observed data")
     plt.errorbar(x=this_x, y=this_y, yerr=this_yerr,
                  fmt="none", ecolor="k", elinewidth=1, capsize=3,
                  label=r"Observed 1$\sigma$")
@@ -111,8 +111,8 @@ def plot_postpred_samples(trace, variable_name="f_star", show_title=False, show_
     sns.rugplot(this_xnew, height=0.025, color='r')
     if show_title:
         plt.title(f"{variable_name} ({csv_filename})")
-    plt.xlabel("Time")
-    plt.ylabel("Flux")
+    plt.xlabel("Time (MJD)")
+    plt.ylabel("Std. Flux Density")
     if show_legend:
         plt.legend()
     if save_plot:
@@ -300,7 +300,7 @@ def plot_lsp(trace, group="posterior_predictive", variable_name="f_star", show_t
     obs_power = LombScargle(
         t=trace.constant_data.t,
         y=trace.observed_data.y,
-        dy=None,
+        dy=trace.constant_data.y_stderr,
         fit_mean=LSP_FITMEAN,
         center_data=LSP_CENTER_DATA,
         normalization=LSP_NORMALIZATION
@@ -339,7 +339,7 @@ def plot_lsps(trace, group="posterior_predictive", variable_names=["f_star_SE", 
     obs_power = LombScargle(
         t=trace.constant_data.t,
         y=trace.observed_data.y,
-        dy=None,
+        dy=trace.constant_data.y_stderr,
         fit_mean=LSP_FITMEAN,
         center_data=LSP_CENTER_DATA,
         normalization=LSP_NORMALIZATION
