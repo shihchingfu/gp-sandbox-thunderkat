@@ -63,6 +63,8 @@ def plot_lc(path_to_csv, plot_mean=False, show_title=False, show_legend=False, s
     if save_plot:
         fig.savefig(f'figures/{path_to_csv.stem}_lc.jpg', dpi=300, bbox_inches='tight')
 
+    return this_x, this_y
+
 def plot_priorpred_samples(trace, variable_name="y"):
     """Plot prior predictive samples and original data points"""
 
