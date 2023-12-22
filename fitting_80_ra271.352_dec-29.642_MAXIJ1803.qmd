@@ -125,8 +125,8 @@ summary(data_df[c("f_peak", "f_peak_err", "mjd", "y", "y_err")])
 - Observations are evenly spread over the time range.
 - The shortest gap between observations is `r round(min_xgap, 2)` days.
 - The longest gap between observations is `r round(max(diff(data_df$mjd)), 2)` days.
-- The mean flux density is $\bar{y} =$ `r format(signif(mean(data_df$f_peak)*1000,3), scientific = F)` mJy.
-- The mean standard error in the observations is `r format(signif(mean(data_df$f_peak_err)*1000,3), scientific = F)` mJy.
+- The mean flux density is $\bar{y} =$ `r format(signif(mean(data_df$f_peak)*1000, 3), scientific = F)` mJy.
+- The mean standard error in the observations is `r format(signif(mean(data_df$f_peak_err)*1000, 3), scientific = F)` mJy.
 - The observational noise is very small relative to the brightness of the observations. 
 
 # SE Basic Model
@@ -438,6 +438,7 @@ SE_M32_P_fit$print(variables = c("eta", "ell_SE", "ell_M", "ell_P", "T"), digits
 ```{r}
 mcmc_plots(SE_M32_P_fit, c("eta", "ell_SE", "ell_M", "ell_P", "T"))
 ```
+
 ## Posterior Predictive Samples
 
 ```{r}
