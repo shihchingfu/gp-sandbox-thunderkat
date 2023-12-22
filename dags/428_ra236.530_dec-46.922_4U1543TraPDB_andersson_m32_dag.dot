@@ -1,9 +1,9 @@
 digraph {
 	subgraph "clusterobs_id (21)" {
-		y_stderr [label="y_stderr
+		t [label="t
 ~
 ConstantData" shape=box style="rounded, filled"]
-		t [label="t
+		y_stderr [label="y_stderr
 ~
 ConstantData" shape=box style="rounded, filled"]
 		label="obs_id (21)" labeljust=r labelloc=b style=rounded
@@ -14,12 +14,12 @@ ConstantData" shape=box style="rounded, filled"]
 ConstantData" shape=box style="rounded, filled"]
 		label=200 labeljust=r labelloc=b style=rounded
 	}
-	ell_M32 [label="ell_M32
-~
-InvGamma" shape=ellipse]
 	eta_M32 [label="eta_M32
 ~
 TruncatedNormal" shape=ellipse]
+	ell_M32 [label="ell_M32
+~
+InvGamma" shape=ellipse]
 	sig [label="sig
 ~
 TruncatedNormal" shape=ellipse]
@@ -29,7 +29,7 @@ TruncatedNormal" shape=ellipse]
 MvNormal" shape=ellipse style=filled]
 		label=21 labeljust=r labelloc=b style=rounded
 	}
-	ell_M32 -> y
 	eta_M32 -> y
+	ell_M32 -> y
 	sig -> y
 }

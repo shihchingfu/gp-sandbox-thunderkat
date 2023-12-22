@@ -24,7 +24,7 @@ FIG_SIZE = (10,4.5)
 
 LSP_FITMEAN = True
 LSP_CENTER_DATA = False
-LSP_NORMALIZATION = "psd"
+LSP_NORMALIZATION = "standard"
 
 WELCH_FS=1.0
 WELCH_NPERSEG=256
@@ -37,26 +37,31 @@ WELCH_AVERAGE="median"
 PLOT_COLOURS = ['g', 'r', 'b', 'c', 'm', 'y', 'k']
 
 def plot_lc(path_to_csv, plot_mean=False, show_title=False, show_legend=False, save_plot=False):
-    """Plot light curve from raw CSV data including 1 sigma error bars and overall mean."""
+    """Plot light curve from raw CSV data including 1 sigma error bars."""
 
     this_lc = pd.read_csv(path_to_csv)
     this_x = this_lc['mjd']
-    this_y = this_lc['f_peak']*1000
+    this_y = this_lc['f_peak']*1000 # convert to mJy
     this_yerr = this_lc['f_peak_err']*1000
     mean_y = np.nanmean(this_y)
 
     fig = plt.figure(figsize=FIG_SIZE)
     plt.plot(this_x, this_y, "ob", ms=4, alpha=1, label="Observed data")
+    
     if plot_mean:
         plt.axhline(y=mean_y, c='gray', ls=':')
+    
     plt.errorbar(x=this_x, y=this_y, yerr=this_yerr,
                  fmt="none", ecolor="k", elinewidth=1, capsize=3,
                  label=r"1 $\sigma$")
     sns.rugplot(this_x, height=0.025, color='b')
+    
     if show_title:
         plt.title(f"{path_to_csv.stem} (N={len(this_y)})")
+    
     plt.xlabel("Time (MJD)")
     plt.ylabel("Flux Density (mJy)")
+    
     if show_legend:
         plt.legend()
 
@@ -66,7 +71,7 @@ def plot_lc(path_to_csv, plot_mean=False, show_title=False, show_legend=False, s
     return this_x, this_y
 
 def plot_priorpred_samples(trace, variable_name="y"):
-    """Plot prior predictive samples and original data points"""
+    """Plot prior predictive samples and original data points."""
 
     this_x = trace.constant_data.t
     this_y = trace.observed_data.y
@@ -84,7 +89,7 @@ def plot_priorpred_samples(trace, variable_name="y"):
     ax.set_xlabel("t")
 
 def plot_postpred_samples(trace, variable_name="f_star", show_title=False, show_legend=False, save_plot=False):
-    """Plot posterior predicted samples and original data light curve"""
+    """Plot posterior predicted samples and original data light curve."""
 
     csv_filename = trace.constant_data.attrs['csv_filename']
 
@@ -111,17 +116,21 @@ def plot_postpred_samples(trace, variable_name="f_star", show_title=False, show_
     )
     plt.plot(this_xnew.flatten(), y_postpred_median, "y", linewidth=1, label="Median")
     sns.rugplot(this_xnew, height=0.025, color='r')
+    
     if show_title:
         plt.title(f"{variable_name} ({csv_filename})")
+        
     plt.xlabel("Time (MJD)")
     plt.ylabel("Std. Flux Density")
+    
     if show_legend:
         plt.legend()
+        
     if save_plot:
         fig.savefig(f'figures/{csv_filename}_postpred.jpg', dpi=300, bbox_inches='tight')
 
 def plot_priorpost_cnr(trace, variable_names=None):
-    """Plot 'corner plot' of prior and posterior samples for each GP hyperparameter"""
+    """Plot 'corner plot' of prior and posterior samples for each GP hyperparameter."""
 
     ax_list = az.plot_pair(
         trace,
@@ -144,7 +153,7 @@ def plot_priorpost_cnr(trace, variable_names=None):
     )
 
 def plot_post_cnr(trace, variable_names=None):
-    """Plot 'corner plot' of posterior samples for each GP hyperparameter"""
+    """Plot 'corner plot' of posterior samples for each GP hyperparameter."""
 
     az.plot_pair(
         trace,
@@ -158,7 +167,7 @@ def plot_post_cnr(trace, variable_names=None):
     )
 
 def print_post_summary(trace, variable_names=None):
-    """Wrapper for printing MCMC trace summary statistics from .NC file"""
+    """Wrapper for printing MCMC trace summary statistics from .NC file."""
 
     return az.summary(trace, 
                       var_names=variable_names,
@@ -170,7 +179,7 @@ def print_post_summary(trace, variable_names=None):
                       hdi_prob=0.68)
 
 def plot_traces(trace, variable_names=None):
-    """Wrapper for plotting MCMC traces from .NC file"""
+    """Wrapper for plotting MCMC traces from .NC file."""
 
     az.style.use("arviz-white")
     return az.plot_trace(trace, var_names=variable_names, combined=False)
@@ -255,8 +264,10 @@ def plot_welch_psds(trace, group="posterior_predictive", variable_names=("f_star
 
     ax.set_xlabel("Frequency of modulation (Hz)")
     ax.set_ylabel(r"PSD (Jy$^2$ Hz)")
+    
     if show_title:
         ax.set_title(f"Welch PSD ({trace.constant_data.attrs['csv_filename']})")
+        
     ax.legend()
 
 def plot_lsp(trace, group="posterior_predictive", variable_name="f_star", show_title=False):
@@ -323,7 +334,8 @@ def plot_lsp(trace, group="posterior_predictive", variable_name="f_star", show_t
     ax.loglog(freqs_f, psd_median, lw=2,color="red", alpha=0.8, label=r"Median")
     
     ax.set_xlabel("Frequency")
-    ax.set_ylabel(r"Power")
+    ax.set_ylabel("Power")
+    
     if show_title:
         ax.set_title(f"LSP of {group} ({trace.constant_data.attrs['csv_filename']})")
     ax.legend()
@@ -399,21 +411,27 @@ def plot_lsps(trace, group="posterior_predictive", variable_names=["f_star_SE", 
         ax.loglog(freqs_f, psd_median, lw=2, alpha=0.8, color=col, label=f"{var}")
 
     ax.set_xlabel("Frequency")
-    ax.set_ylabel(r"Power")
+    ax.set_ylabel("Power")
     if show_title:
         ax.set_title(f"LSP of {group} ({trace.constant_data.attrs['csv_filename']})")
     ax.legend()
 
-
-
-def fit_se_gp(path_to_csv, rng_seed=None):
+def fit_se_gp(path_to_csv, standardise_y=True, rng_seed=None):
     """Fit GP using squared exponential kernel."""
 
     lc = pd.read_csv(path_to_csv)
-    y = lc["f_peak"].to_numpy()
-    y_stderr = lc["f_peak_err"].to_numpy()
     t = lc["mjd"].to_numpy()
 
+    y = lc["f_peak"].to_numpy()
+    y_stderr = lc["f_peak_err"].to_numpy()
+    
+    if standardise_y:
+        y_mean = np.nanmean(y)
+        y_sd = np.nanstd(y)
+
+        y = (y - y_mean)/y_sd
+        y_stderr = y_stderr/y_sd
+    
     y_stderr_mean = np.nanmean(y_stderr)
     y_stderr_sd = np.nanstd(y_stderr)
     t_mingap = np.diff(np.sort(t)).min()
@@ -487,7 +505,7 @@ def fit_se_gp(path_to_csv, rng_seed=None):
 
     return se_trace, se_dag
 
-def fit_m32_gp(path_to_csv, rng_seed=None):
+def fit_m32_gp(path_to_csv, standardise_y=True, rng_seed=None):
     """Fit GP using Matern 3/2 kernel."""
 
     lc = pd.read_csv(path_to_csv)
@@ -495,6 +513,13 @@ def fit_m32_gp(path_to_csv, rng_seed=None):
     y_stderr = lc["f_peak_err"].to_numpy()
     t = lc["mjd"].to_numpy()
 
+    if standardise_y:
+        y_mean = np.nanmean(y)
+        y_sd = np.nanstd(y)
+
+        y = (y - y_mean)/y_sd
+        y_stderr = y_stderr/y_sd
+    
     y_stderr_mean = np.nanmean(y_stderr)
     y_stderr_sd = np.nanstd(y_stderr)
     t_mingap = np.diff(np.sort(t)).min()
@@ -567,7 +592,7 @@ def fit_m32_gp(path_to_csv, rng_seed=None):
 
     return m32_trace, m32_dag
 
-def fit_se_m32_gp(path_to_csv, multiplicative_kernel=False, rng_seed=None):
+def fit_se_m32_gp(path_to_csv, standardise_y=True, multiplicative_kernel=False, rng_seed=None):
     """Fit GP using Squared Exponential + Matern 3/2 kernel."""
 
     lc = pd.read_csv(path_to_csv)
@@ -575,6 +600,13 @@ def fit_se_m32_gp(path_to_csv, multiplicative_kernel=False, rng_seed=None):
     y_stderr = lc["f_peak_err"].to_numpy()
     t = lc["mjd"].to_numpy()
 
+    if standardise_y:
+        y_mean = np.nanmean(y)
+        y_sd = np.nanstd(y)
+
+        y = (y - y_mean)/y_sd
+        y_stderr = y_stderr/y_sd
+    
     y_stderr_mean = np.nanmean(y_stderr)
     y_stderr_sd = np.nanstd(y_stderr)
     t_mingap = np.diff(np.sort(t)).min()
@@ -655,7 +687,7 @@ def fit_se_m32_gp(path_to_csv, multiplicative_kernel=False, rng_seed=None):
 
     return sem32_trace, sem32_dag
 
-def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
+def fit_gpSE_gpM32(path_to_csv, standardise_y=True, rng_seed=None):
     """Fit compound GP model: Squared Exponential GP + Matern 3/2 GP."""
 
     lc = pd.read_csv(path_to_csv)
@@ -663,6 +695,13 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
     y_stderr = lc["f_peak_err"].to_numpy()
     t = lc["mjd"].to_numpy()
 
+    if standardise_y:
+        y_mean = np.nanmean(y)
+        y_sd = np.nanstd(y)
+
+        y = (y - y_mean)/y_sd
+        y_stderr = y_stderr/y_sd
+    
     y_stderr_mean = np.nanmean(y_stderr)
     y_stderr_sd = np.nanstd(y_stderr)
     t_mingap = np.diff(np.sort(t)).min()
@@ -747,7 +786,7 @@ def fit_gpSE_gpM32(path_to_csv, rng_seed=None):
 
     return gpSE_gpM32_trace, gpSE_gpM32_dag
 
-def fit_gpSE_gpPer(path_to_csv, standardise_y=False, rng_seed=None):
+def fit_gpSE_gpPer(path_to_csv, standardise_y=True, rng_seed=None):
     """Fit compound GP model: Squared Exponential GP + Periodic GP."""
 
     lc = pd.read_csv(path_to_csv)
@@ -763,16 +802,8 @@ def fit_gpSE_gpPer(path_to_csv, standardise_y=False, rng_seed=None):
         y = (y - y_mean)/y_sd
         y_stderr = y_stderr / y_sd
 
-    #y_stderr_mean = np.nanmean(y_stderr)
-    #y_stderr_sd = np.nanstd(y_stderr)
     t_mingap = np.diff(np.sort(t)).min()
     t_range = np.ptp(t)
-
-    # t_star = np.linspace(
-    #     start=np.floor(t.min()),
-    #     stop=np.ceil(t.max()),
-    #     num = N_NEW
-    # )
 
     t_star = np.arange(
         start=np.floor(t.min()),

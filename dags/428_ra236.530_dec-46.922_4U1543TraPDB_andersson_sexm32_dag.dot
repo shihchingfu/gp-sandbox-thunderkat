@@ -1,9 +1,9 @@
 digraph {
 	subgraph "clusterobs_id (21)" {
-		y_stderr [label="y_stderr
+		t [label="t
 ~
 ConstantData" shape=box style="rounded, filled"]
-		t [label="t
+		y_stderr [label="y_stderr
 ~
 ConstantData" shape=box style="rounded, filled"]
 		label="obs_id (21)" labeljust=r labelloc=b style=rounded
