@@ -56,6 +56,7 @@ data {
   int<lower=1> N_star;
   array[N_star] real x_star;
   real min_xgap;
+  real range_x;
   real T_lb;
   real T_ub;
 }
@@ -63,9 +64,9 @@ transformed data {
   vector[N] mu = rep_vector(0, N);
 }
 parameters {
-  real<lower=0> ell_SE;
-  real<lower=0> ell_M;
-  real<lower=0> ell_P;
+  real<lower=min_xgap> ell_SE;
+  real<lower=min_xgap> ell_M;
+  real<lower=min_xgap> ell_P;
   real<lower=0> eta;
   real<lower=T_lb,upper=T_ub> T;
   vector<lower=0>[N] sigma; // heteroskedastic
@@ -76,9 +77,9 @@ model {
                            gp_periodic_cov(x, 1.0, ell_P, T) );
   matrix[N, N] L = cholesky_decompose(add_diag(K, sigma^2));
 
-  ell_SE ~ inv_gamma(3, 8*ceil(min_xgap));
-  ell_M ~ inv_gamma(3, 8*ceil(min_xgap));
-  ell_P ~ inv_gamma(3, 8*ceil(min_xgap));
+  ell_SE ~ inv_gamma(3, 0.5*ceil(range_x));
+  ell_M ~ inv_gamma(3, 0.5*ceil(range_x));
+  ell_P ~ inv_gamma(3, 0.5*ceil(range_x));
   eta ~ std_normal();
   sigma ~ normal(y_stderr, sd(y_stderr)); // use observed error estimates
 
