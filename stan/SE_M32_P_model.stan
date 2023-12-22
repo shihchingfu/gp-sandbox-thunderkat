@@ -69,22 +69,22 @@ parameters {
   real<lower=min_xgap> ell_P;
   real<lower=0> eta;
   real<lower=T_lb,upper=T_ub> T;
-  vector<lower=0>[N] sigma; // heteroskedastic
+  //vector<lower=0>[N] sigma; // heteroskedastic
 }
 model {
   matrix[N, N] K = eta * ( gp_exp_quad_cov(x, 1.0, ell_SE) +
                            gp_matern32_cov(x, 1.0, ell_M) +
                            gp_periodic_cov(x, 1.0, ell_P, T) );
-  matrix[N, N] L = cholesky_decompose(add_diag(K, sigma^2));
+  matrix[N, N] L = cholesky_decompose(add_diag(K, y_stderr^2));
 
   ell_SE ~ inv_gamma(3, 0.5*ceil(range_x));
   ell_M ~ inv_gamma(3, 0.5*ceil(range_x));
   ell_P ~ inv_gamma(3, 0.5*ceil(range_x));
   eta ~ std_normal();
-  sigma ~ normal(y_stderr, sd(y_stderr)); // use observed error estimates
+  //sigma ~ normal(y_stderr, sd(y_stderr)); // use observed error estimates
 
   y ~ multi_normal_cholesky(mu, L);
 }
 generated quantities {
-  vector[N_star] f_star = gp_pred_rng(x_star, y, x, eta, ell_SE, ell_M, ell_P, T, sigma, 1e-9);
+  vector[N_star] f_star = gp_pred_rng(x_star, y, x, eta, ell_SE, ell_M, ell_P, T, y_stderr, 1e-9);
 }
